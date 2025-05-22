@@ -3,7 +3,7 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Document as DocumentType, DocumentApprovalStatus } from '@/types'; // Assuming Document type is defined in types
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000/api'; // Ensure this is correct
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://172.20.10.2:5000/api'; // Ensure this is correct
 
 // Helper to get the token
 const getToken = async () => {

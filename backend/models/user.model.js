@@ -1,3 +1,4 @@
+// backend/models/user.model.js
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
@@ -25,7 +26,7 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Password is required'],
       minlength: 6,
-      select: false, // Good for not sending it by default
+      select: false,
     },
     role: {
       type: String,
@@ -36,11 +37,14 @@ const userSchema = new mongoose.Schema(
       type: {
         type: String,
         default: 'Point',
-        enum: ['Point']
+        enum: ['Point'],
       },
       coordinates: {
         type: [Number], // [longitude, latitude]
-        required: false,
+        default: [0, 0], // <<< ADDED DEFAULT COORDINATES
+        // 'required' can be true if you always want coordinates when type is 'Point'
+        // or false if you handle cases where location might not be a Point initially.
+        // Given the 2dsphere index, having default coordinates is safer.
       },
     },
     documents: [
@@ -55,33 +59,32 @@ const userSchema = new mongoose.Schema(
         ref: 'Booking',
       },
     ],
+    walletBalance: { // Added from previous steps
+        type: Number,
+        default: 0,
+    },
+    idProofSubmitted: { // Added from previous steps
+        type: Boolean,
+        default: false,
+    },
+    idProofApproved: { // Added from previous steps
+        type: Boolean,
+        default: false,
+    },
     joinDate: {
       type: Date,
       default: Date.now,
     },
-    // New/Updated fields:
-    walletBalance: {
-      type: Number,
-      default: 0,
-    },
-    idProofSubmitted: { // Tracks if a user has submitted any document
-      type: Boolean,
-      default: false,
-    },
-    idProofApproved: { // Tracks if the submitted ID is approved by an owner
-      type: Boolean,
-      default: false,
-    }
   },
   {
     timestamps: true,
-    // Ensure virtuals are included when converting to JSON/Object if you plan to send them to frontend
     toJSON: { virtuals: true },
     toObject: { virtuals: true }
   }
 );
 
 // Create geospatial index for location
+// This index requires 'coordinates' to be present if 'type' is 'Point'.
 userSchema.index({ location: '2dsphere' });
 
 // Hash password before saving
@@ -98,20 +101,11 @@ userSchema.pre('save', async function (next) {
 
 // Method to compare password
 userSchema.methods.comparePassword = async function (candidatePassword) {
-  // Ensure 'this.password' is available. If select: false is causing issues here for login,
-  // you might need to explicitly select it in the query: User.findOne({email}).select('+password')
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
-// Virtual property to check if user's documents are verified
-// This virtual is still useful for a quick check if you have populated documents.
-// However, the idProofApproved field provides a more direct status.
-userSchema.virtual('isDocumentVerified').get(function () {
-  if (!this.documents || this.documents.length === 0) return false;
-  // Check if there's at least one approved document of a required type
-  return this.documents.some(doc => doc.status === 'approved');
-});
-
+// Virtual property (optional, as we added direct fields)
+// userSchema.virtual('isDocumentVerified').get(function () { ... });
 
 const User = mongoose.model('User', userSchema);
 

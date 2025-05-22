@@ -1,6 +1,6 @@
 // backend/controllers/user.controller.js
 const User = require('../models/user.model');
-const catchAsync = require('../utils/catchAsync'); // Assuming you have this
+const catchAsync = require('../utils/catchAsyns'); // Assuming you have this
 const AppError = require('../utils/appError');   // Assuming you have this
 
 // Utility to filter allowed fields for updates

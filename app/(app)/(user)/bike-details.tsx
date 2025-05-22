@@ -1,638 +1,267 @@
-import Button from "@/components/Button";
-import Colors from "@/constants/Colors";
-import { useAppDispatch, useAppSelector } from "@/redux/hooks";
-import { createBooking } from "@/redux/slices/bookingSlice";
-import { Link, useRouter } from "expo-router";
-import {
-	ArrowLeft,
-	Calendar,
-	ChevronRight,
-	Clock,
-	MapPin,
-} from "lucide-react-native";
-import { useEffect, useState } from "react";
-import {
-	Alert,
-	Dimensions,
-	FlatList,
-	Image,
-	Platform,
-	ScrollView,
-	StyleSheet,
-	Text,
-	TouchableOpacity,
-	View,
-} from "react-native";
-import MapView, { Marker } from "react-native-maps";
+// app/(app)/(user)/bike-details.tsx
+import React, { useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, Image, ActivityIndicator, Alert, Dimensions } from 'react-native';
+import { useLocalSearchParams, router } from 'expo-router';
+import { useAppDispatch, useAppSelector } from '@/redux/hooks';
+import { fetchBikeDetailsThunk, setSelectedBike, clearBikeError } from '@/redux/slices/bikeSlice';
+import Button from '@/components/Button';
+import Colors from '@/constants/Colors';
+import { MapPin, CalendarDays, CheckCircle, XCircle, Tag, DollarSign, Info } from 'lucide-react-native';
+// For image carousel/slider, you might use a library or a simple ScrollView
+// import Swiper from 'react-native-swiper'; // Example library
 
-const { width } = Dimensions.get("window");
+const { width: screenWidth } = Dimensions.get('window');
 
 export default function BikeDetailsScreen() {
-	const router = useRouter();
-	const dispatch = useAppDispatch();
-	const { selectedBike } = useAppSelector((state) => state.bikes);
-	const { user, documentStatus } = useAppSelector((state) => state.auth);
-	const [activeImage, setActiveImage] = useState(0);
-	const [hours, setHours] = useState(1);
+  const dispatch = useAppDispatch();
+  const { bikeId } = useLocalSearchParams<{ bikeId: string }>();
+  const { selectedBike, isLoading, error } = useAppSelector((state) => state.bike);
+  const authUser = useAppSelector((state) => state.auth.user);
 
-	// Ensure there's a selected bike
-	useEffect(() => {
-		if (!selectedBike) {
-			const timer = setTimeout(() => router.back(), 100);
-			return () => clearTimeout(timer);
-		}
-	}, [selectedBike, router]);
+  useEffect(() => {
+    if (bikeId) {
+      dispatch(clearBikeError());
+      dispatch(fetchBikeDetailsThunk(bikeId));
+    }
+    // Clear selected bike when screen is left (optional, depends on desired UX)
+    return () => {
+      // dispatch(setSelectedBike(null)); // Or keep it for quicker back navigation
+    };
+  }, [dispatch, bikeId]);
 
-	if (!selectedBike) {
-		return null;
-	}
+  const handleBookNow = () => {
+    if (!authUser) {
+      Alert.alert("Authentication Required", "Please log in to book a bike.", [
+        { text: "OK", onPress: () => router.push('/(auth)/login') }
+      ]);
+      return;
+    }
+    if (authUser.role !== 'user') {
+        Alert.alert("Access Denied", "Only users can book bikes.");
+        return;
+    }
 
-	const handleRent = () => {
-		if (documentStatus !== "approved") {
-			if (documentStatus === "pending") {
-				Alert.alert(
-					"Documents Pending",
-					"Your documents are pending approval. You cannot book a bike until your documents are approved.",
-					[{ text: "OK" }]
-				);
-			} else {
-				Alert.alert(
-					"Documents Required",
-					"You need to upload and get your documents approved before booking a bike.",
-					[
-						{ text: "Cancel" },
-						{
-							text: "Upload Documents",
-							onPress: () => router.push("/(app)/(user)/profile"),
-						},
-					]
-				);
-			}
-			return;
-		}
+    if (!authUser.idProofApproved) {
+      Alert.alert(
+        "ID Verification Required",
+        "Your ID documents must be approved before you can book a bike. Please upload your documents or wait for approval.",
+        [
+          { text: "Upload Documents", onPress: () => router.push('/(app)/(user)/upload-documents' as any) },
+          { text: "OK", style: "cancel" }
+        ]
+      );
+      return;
+    }
 
-		// Demo payment success
-		const startTime = new Date();
-		const endTime = new Date(startTime.getTime() + hours * 60 * 60 * 1000);
+    if (selectedBike && !selectedBike.availability) {
+        Alert.alert("Not Available", "This bike is currently not available for booking.");
+        return;
+    }
 
-		dispatch(
-			createBooking({
-				userId: user?.id || "",
-				bikeId: selectedBike.id,
-				startTime: startTime.toISOString(),
-				endTime: endTime.toISOString(),
-				duration: hours,
-				totalAmount: selectedBike.pricePerHour * hours,
-				status: "active",
-				paymentId:
-					"pay_demo" + Math.random().toString(36).substring(2, 11),
-			})
-		);
+    // Navigate to booking creation screen, passing bike details
+    if (selectedBike) {
+      router.push({
+        pathname: '/(app)/(user)/create-booking', // We will create this screen next
+        params: { bikeId: selectedBike.id, pricePerHour: selectedBike.pricePerHour, pricePerDay: selectedBike.pricePerDay },
+      });
+    }
+  };
 
-		Alert.alert(
-			"Booking Successful",
-			"Your bike has been booked successfully. You can view your booking details in the Bookings tab.",
-			[
-				{
-					text: "View Bookings",
-					onPress: () => router.push("/(app)/(user)/bookings"),
-				},
-				{ text: "OK", onPress: () => router.back() },
-			]
-		);
-	};
+  if (isLoading || !selectedBike && !error) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <ActivityIndicator size="large" color={Colors.light.primary} />
+        <Text style={styles.infoText}>Loading bike details...</Text>
+      </View>
+    );
+  }
 
-	return (
-		<View style={styles.container}>
-			<ScrollView showsVerticalScrollIndicator={false}>
-				{/* Image Gallery */}
-				<View style={styles.imageContainer}>
-					<Image
-						source={{ uri: selectedBike.images[activeImage] }}
-						style={styles.mainImage}
-						resizeMode="cover"
-					/>
-					<TouchableOpacity
-						style={styles.backButton}
-						onPress={() => router.back()}>
-						<ArrowLeft size={24} color="white" />
-					</TouchableOpacity>
-					<FlatList
-						data={selectedBike.images}
-						horizontal
-						showsHorizontalScrollIndicator={false}
-						keyExtractor={(_, index) => index.toString()}
-						renderItem={({ item, index }) => (
-							<TouchableOpacity
-								style={[
-									styles.thumbnailContainer,
-									activeImage === index &&
-										styles.activeThumbnail,
-								]}
-								onPress={() => setActiveImage(index)}>
-								<Image
-									source={{ uri: item }}
-									style={styles.thumbnail}
-								/>
-							</TouchableOpacity>
-						)}
-						contentContainerStyle={styles.thumbnailList}
-						style={styles.thumbnailScrollView}
-					/>
-				</View>
+  if (error) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <Text style={styles.errorText}>Error: {error}</Text>
+        <Button title="Go Back" onPress={() => router.back()} />
+      </View>
+    );
+  }
 
-				<View style={styles.detailsContainer}>
-					{/* Header */}
-					<View style={styles.headerContainer}>
-						<View>
-							<Text style={styles.bikeModel}>
-								{selectedBike.model}
-							</Text>
-							<View style={styles.categoryContainer}>
-								<Text style={styles.categoryText}>
-									{selectedBike.category}
-								</Text>
-							</View>
-						</View>
-						<View style={styles.priceContainer}>
-							<Text style={styles.price}>
-								₹{selectedBike.pricePerHour}
-							</Text>
-							<Text style={styles.perHour}>/hour</Text>
-						</View>
-					</View>
+  if (!selectedBike) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <Text style={styles.infoText}>Bike not found.</Text>
+        <Button title="Go Back" onPress={() => router.back()} />
+      </View>
+    );
+  }
 
-					{/* Location */}
-					<View style={styles.infoContainer}>
-						<MapPin size={18} color={Colors.light.grey3} />
-						<Text style={styles.infoText}>
-							{selectedBike.location.address ||
-								"Location unavailable"}
-						</Text>
-					</View>
+  return (
+    <ScrollView style={styles.container}>
+      {/* Image Carousel/Slider */}
+      <View style={styles.imageSliderContainer}>
+        {selectedBike.images && selectedBike.images.length > 0 ? (
+          <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false}>
+            {selectedBike.images.map((imgUrl, index) => (
+              <Image key={index} source={{ uri: imgUrl }} style={styles.bikeImage} onError={() => console.log(`Failed to load image: ${imgUrl}`)} />
+            ))}
+          </ScrollView>
+        ) : (
+          <Image source={{ uri: 'https://placehold.co/600x400/eee/ccc?text=No+Image' }} style={styles.bikeImage} />
+        )}
+      </View>
 
-					{/* Availability */}
-					<View style={styles.availabilityContainer}>
-						<View
-							style={[
-								styles.availabilityBadge,
-								{
-									backgroundColor: selectedBike.available
-										? `${Colors.light.tertiary}20`
-										: `${Colors.light.danger}20`,
-								},
-							]}>
-							<Text
-								style={[
-									styles.availabilityText,
-									{
-										color: selectedBike.available
-											? Colors.light.tertiary
-											: Colors.light.danger,
-									},
-								]}>
-								{selectedBike.available
-									? "Available"
-									: "Unavailable"}
-							</Text>
-						</View>
-					</View>
+      <View style={styles.detailsContainer}>
+        <Text style={styles.modelName}>{selectedBike.model}</Text>
+        <View style={styles.detailRow}>
+          <Tag size={18} color={Colors.light.textMuted} style={styles.icon} />
+          <Text style={styles.category}>{selectedBike.category}</Text>
+        </View>
 
-					{/* Map */}
-					<View style={styles.mapContainer}>
-						<MapView
-							style={styles.map}
-							initialRegion={{
-								latitude: selectedBike.location.latitude,
-								longitude: selectedBike.location.longitude,
-								latitudeDelta: 0.01,
-								longitudeDelta: 0.01,
-							}}
-							scrollEnabled={false}
-							zoomEnabled={false}>
-							<Marker
-								coordinate={{
-									latitude: selectedBike.location.latitude,
-									longitude: selectedBike.location.longitude,
-								}}
-								pinColor={Colors.light.primary}
-							/>
-						</MapView>
-						<TouchableOpacity style={styles.viewMapButton}>
-							<Text style={styles.viewMapText}>
-								View Full Map
-							</Text>
-						</TouchableOpacity>
-					</View>
+        <View style={styles.detailRow}>
+          <DollarSign size={18} color={Colors.light.textMuted} style={styles.icon} />
+          <Text style={styles.price}>
+            ₹{selectedBike.pricePerHour.toFixed(2)}/hr  |  ₹{selectedBike.pricePerDay.toFixed(2)}/day
+          </Text>
+        </View>
 
-					{/* Rental Duration */}
-					<View style={styles.durationContainer}>
-						<Text style={styles.sectionTitle}>Rental Duration</Text>
-						<View style={styles.durationSelector}>
-							<TouchableOpacity
-								style={styles.durationButton}
-								onPress={() =>
-									setHours(Math.max(1, hours - 1))
-								}>
-								<Text style={styles.durationButtonText}>-</Text>
-							</TouchableOpacity>
-							<View style={styles.hoursContainer}>
-								<Text style={styles.hoursText}>
-									{hours} {hours === 1 ? "hour" : "hours"}
-								</Text>
-							</View>
-							<TouchableOpacity
-								style={styles.durationButton}
-								onPress={() => setHours(hours + 1)}>
-								<Text style={styles.durationButtonText}>+</Text>
-							</TouchableOpacity>
-						</View>
-						<View style={styles.durationInfo}>
-							<View style={styles.durationInfoItem}>
-								<Clock size={16} color={Colors.light.grey3} />
-								<Text style={styles.durationInfoText}>
-									Starts now
-								</Text>
-							</View>
-							<View style={styles.durationInfoItem}>
-								<Calendar
-									size={16}
-									color={Colors.light.grey3}
-								/>
-								<Text style={styles.durationInfoText}>
-									Ends in {hours}{" "}
-									{hours === 1 ? "hour" : "hours"}
-								</Text>
-							</View>
-						</View>
-					</View>
+        <View style={styles.detailRow}>
+          {selectedBike.availability ? (
+            <CheckCircle size={18} color="green" style={styles.icon} />
+          ) : (
+            <XCircle size={18} color="red" style={styles.icon} />
+          )}
+          <Text style={selectedBike.availability ? styles.available : styles.unavailable}>
+            {selectedBike.availability ? 'Available for booking' : 'Currently Unavailable'}
+          </Text>
+        </View>
 
-					{/* Document Status */}
-					{documentStatus !== "approved" && (
-						<View
-							style={[
-								styles.documentWarning,
-								{
-									backgroundColor:
-										documentStatus === "pending"
-											? `${Colors.light.warning}15`
-											: `${Colors.light.danger}15`,
-								},
-							]}>
-							<Text
-								style={[
-									styles.documentWarningText,
-									{
-										color:
-											documentStatus === "pending"
-												? Colors.light.warning
-												: Colors.light.danger,
-									},
-								]}>
-								{documentStatus === "pending"
-									? "Your documents are pending approval"
-									: documentStatus === "rejected"
-									? "Your documents were rejected. Please upload new documents."
-									: "You need to upload your ID documents before booking"}
-							</Text>
-							<Link href="/(app)/(user)/profile" asChild>
-								<TouchableOpacity>
-									<ChevronRight
-										size={20}
-										color={
-											documentStatus === "pending"
-												? Colors.light.warning
-												: Colors.light.danger
-										}
-									/>
-								</TouchableOpacity>
-							</Link>
-						</View>
-					)}
+        {selectedBike.location.address && (
+          <View style={styles.detailRow}>
+            <MapPin size={18} color={Colors.light.textMuted} style={styles.icon} />
+            <Text style={styles.locationText}>{selectedBike.location.address}</Text>
+          </View>
+        )}
+         <View style={styles.detailRow}>
+            <Info size={18} color={Colors.light.textMuted} style={styles.icon} />
+            <Text style={styles.locationText}>
+                Approx. Location: {selectedBike.location.latitude.toFixed(4)}, {selectedBike.location.longitude.toFixed(4)}
+            </Text>
+          </View>
 
-					{/* Price Summary */}
-					<View style={styles.summaryContainer}>
-						<Text style={styles.sectionTitle}>Price Summary</Text>
-						<View style={styles.summaryItem}>
-							<Text style={styles.summaryItemText}>
-								Rental Cost (₹{selectedBike.pricePerHour} x{" "}
-								{hours} {hours === 1 ? "hour" : "hours"})
-							</Text>
-							<Text style={styles.summaryItemValue}>
-								₹{selectedBike.pricePerHour * hours}
-							</Text>
-						</View>
-						<View style={styles.summaryItem}>
-							<Text style={styles.summaryItemText}>
-								Insurance
-							</Text>
-							<Text style={styles.summaryItemValue}>₹0</Text>
-						</View>
-						<View style={styles.summaryItem}>
-							<Text style={styles.summaryItemText}>Taxes</Text>
-							<Text style={styles.summaryItemValue}>₹0</Text>
-						</View>
-						<View style={styles.summaryDivider} />
-						<View style={styles.summaryTotal}>
-							<Text style={styles.summaryTotalText}>
-								Total Amount
-							</Text>
-							<Text style={styles.summaryTotalValue}>
-								₹{selectedBike.pricePerHour * hours}
-							</Text>
-						</View>
-					</View>
-				</View>
-			</ScrollView>
+        {/* Placeholder for description - add if your Bike model has it */}
+        {/* <Text style={styles.descriptionTitle}>Description</Text>
+        <Text style={styles.description}>{selectedBike.description || 'No description available.'}</Text> */}
 
-			{/* Rent Now Button */}
-			<View style={styles.bottomBar}>
-				<View style={styles.totalContainer}>
-					<Text style={styles.totalLabel}>Total</Text>
-					<Text style={styles.totalAmount}>
-						₹{selectedBike.pricePerHour * hours}
-					</Text>
-				</View>
-				<Button
-					title="Book Now"
-					onPress={handleRent}
-					disabled={!selectedBike.available}
-					fullWidth={false}
-				/>
-			</View>
-		</View>
-	);
+        <Button
+          title={selectedBike.availability ? "Book Now" : "Not Available"}
+          onPress={handleBookNow}
+          disabled={!selectedBike.availability || !authUser?.idProofApproved}
+          style={styles.bookButton}
+        />
+        {!selectedBike.availability && <Text style={styles.infoTextSmall}>This bike cannot be booked at the moment.</Text>}
+        {authUser && !authUser.idProofApproved && selectedBike.availability && <Text style={styles.warningText}>Your ID must be approved to book.</Text>}
+
+      </View>
+    </ScrollView>
+  );
 }
 
 const styles = StyleSheet.create({
-	container: {
-		flex: 1,
-		backgroundColor: "#F8F9FA",
-	},
-	imageContainer: {
-		position: "relative",
-		backgroundColor: "black",
-	},
-	mainImage: {
-		width: "100%",
-		height: 300,
-	},
-	backButton: {
-		position: "absolute",
-		top: Platform.OS === "ios" ? 60 : 20,
-		left: 16,
-		width: 40,
-		height: 40,
-		borderRadius: 20,
-		backgroundColor: "rgba(0, 0, 0, 0.5)",
-		justifyContent: "center",
-		alignItems: "center",
-		zIndex: 1,
-	},
-	thumbnailScrollView: {
-		position: "absolute",
-		bottom: 16,
-		left: 0,
-		right: 0,
-	},
-	thumbnailList: {
-		paddingHorizontal: 16,
-	},
-	thumbnailContainer: {
-		width: 60,
-		height: 60,
-		borderRadius: 8,
-		marginRight: 8,
-		borderWidth: 2,
-		borderColor: "transparent",
-		overflow: "hidden",
-	},
-	activeThumbnail: {
-		borderColor: Colors.light.primary,
-	},
-	thumbnail: {
-		width: "100%",
-		height: "100%",
-	},
-	detailsContainer: {
-		padding: 16,
-	},
-	headerContainer: {
-		flexDirection: "row",
-		justifyContent: "space-between",
-		alignItems: "flex-start",
-		marginBottom: 12,
-	},
-	bikeModel: {
-		fontSize: 24,
-		fontWeight: "700",
-		color: Colors.light.text,
-		marginBottom: 8,
-	},
-	categoryContainer: {
-		backgroundColor: "#F0F0F0",
-		paddingHorizontal: 8,
-		paddingVertical: 4,
-		borderRadius: 4,
-		alignSelf: "flex-start",
-	},
-	categoryText: {
-		fontSize: 12,
-		fontWeight: "500",
-		color: Colors.light.grey2,
-	},
-	priceContainer: {
-		flexDirection: "row",
-		alignItems: "flex-end",
-	},
-	price: {
-		fontSize: 24,
-		fontWeight: "700",
-		color: Colors.light.primary,
-	},
-	perHour: {
-		fontSize: 14,
-		color: Colors.light.grey3,
-		marginBottom: 3,
-		marginLeft: 2,
-	},
-	infoContainer: {
-		flexDirection: "row",
-		alignItems: "center",
-		marginBottom: 12,
-	},
-	infoText: {
-		fontSize: 14,
-		color: Colors.light.grey3,
-		marginLeft: 8,
-	},
-	availabilityContainer: {
-		marginBottom: 16,
-	},
-	availabilityBadge: {
-		alignSelf: "flex-start",
-		paddingHorizontal: 12,
-		paddingVertical: 6,
-		borderRadius: 16,
-	},
-	availabilityText: {
-		fontSize: 12,
-		fontWeight: "600",
-	},
-	mapContainer: {
-		height: 150,
-		borderRadius: 12,
-		overflow: "hidden",
-		marginBottom: 24,
-		position: "relative",
-	},
-	map: {
-		width: "100%",
-		height: "100%",
-	},
-	viewMapButton: {
-		position: "absolute",
-		bottom: 12,
-		right: 12,
-		backgroundColor: "white",
-		paddingHorizontal: 12,
-		paddingVertical: 6,
-		borderRadius: 16,
-		shadowColor: "#000",
-		shadowOffset: { width: 0, height: 2 },
-		shadowOpacity: 0.1,
-		shadowRadius: 4,
-		elevation: 3,
-	},
-	viewMapText: {
-		fontSize: 12,
-		fontWeight: "600",
-		color: Colors.light.text,
-	},
-	durationContainer: {
-		marginBottom: 24,
-	},
-	sectionTitle: {
-		fontSize: 18,
-		fontWeight: "600",
-		color: Colors.light.text,
-		marginBottom: 12,
-	},
-	durationSelector: {
-		flexDirection: "row",
-		alignItems: "center",
-		marginBottom: 12,
-	},
-	durationButton: {
-		width: 40,
-		height: 40,
-		borderRadius: 20,
-		backgroundColor: "#F0F0F0",
-		justifyContent: "center",
-		alignItems: "center",
-	},
-	durationButtonText: {
-		fontSize: 20,
-		fontWeight: "600",
-		color: Colors.light.text,
-	},
-	hoursContainer: {
-		flex: 1,
-		paddingHorizontal: 16,
-		alignItems: "center",
-	},
-	hoursText: {
-		fontSize: 16,
-		fontWeight: "600",
-		color: Colors.light.text,
-	},
-	durationInfo: {
-		flexDirection: "row",
-		justifyContent: "space-between",
-	},
-	durationInfoItem: {
-		flexDirection: "row",
-		alignItems: "center",
-	},
-	durationInfoText: {
-		fontSize: 14,
-		color: Colors.light.grey3,
-		marginLeft: 8,
-	},
-	documentWarning: {
-		flexDirection: "row",
-		justifyContent: "space-between",
-		alignItems: "center",
-		padding: 12,
-		borderRadius: 8,
-		marginBottom: 24,
-	},
-	documentWarningText: {
-		flex: 1,
-		fontSize: 14,
-		fontWeight: "500",
-	},
-	summaryContainer: {
-		marginBottom: 120,
-	},
-	summaryItem: {
-		flexDirection: "row",
-		justifyContent: "space-between",
-		marginBottom: 12,
-	},
-	summaryItemText: {
-		fontSize: 14,
-		color: Colors.light.grey2,
-	},
-	summaryItemValue: {
-		fontSize: 14,
-		fontWeight: "500",
-		color: Colors.light.text,
-	},
-	summaryDivider: {
-		height: 1,
-		backgroundColor: Colors.light.divider,
-		marginVertical: 12,
-	},
-	summaryTotal: {
-		flexDirection: "row",
-		justifyContent: "space-between",
-	},
-	summaryTotalText: {
-		fontSize: 16,
-		fontWeight: "600",
-		color: Colors.light.text,
-	},
-	summaryTotalValue: {
-		fontSize: 16,
-		fontWeight: "700",
-		color: Colors.light.primary,
-	},
-	bottomBar: {
-		position: "absolute",
-		bottom: 0,
-		left: 0,
-		right: 0,
-		backgroundColor: "white",
-		paddingHorizontal: 16,
-		paddingVertical: 16,
-		paddingBottom: Platform.OS === "ios" ? 32 : 16,
-		borderTopWidth: 1,
-		borderTopColor: Colors.light.divider,
-		flexDirection: "row",
-		justifyContent: "space-between",
-		alignItems: "center",
-	},
-	totalContainer: {
-		marginRight: 16,
-	},
-	totalLabel: {
-		fontSize: 12,
-		color: Colors.light.grey3,
-	},
-	totalAmount: {
-		fontSize: 18,
-		fontWeight: "700",
-		color: Colors.light.text,
-	},
+  container: {
+    flex: 1,
+    backgroundColor: Colors.light.background,
+  },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  imageSliderContainer: {
+    height: screenWidth * 0.75, // Adjust aspect ratio as needed
+    backgroundColor: '#e0e0e0',
+  },
+  bikeImage: {
+    width: screenWidth,
+    height: screenWidth * 0.75,
+    resizeMode: 'cover', // Or 'contain' if you prefer
+  },
+  detailsContainer: {
+    padding: 20,
+  },
+  modelName: {
+    fontSize: 26,
+    fontWeight: 'bold',
+    color: Colors.light.text,
+    marginBottom: 8,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  icon: {
+    marginRight: 8,
+  },
+  category: {
+    fontSize: 16,
+    color: Colors.light.textMuted,
+    fontStyle: 'italic',
+  },
+  price: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.light.primary,
+  },
+  available: {
+    fontSize: 16,
+    color: 'green',
+    fontWeight: '500',
+  },
+  unavailable: {
+    fontSize: 16,
+    color: 'red',
+    fontWeight: '500',
+  },
+  locationText: {
+    fontSize: 15,
+    color: Colors.light.text,
+    flexShrink: 1, // Allow text to wrap
+  },
+  descriptionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginTop: 15,
+    marginBottom: 5,
+  },
+  description: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: Colors.light.text,
+  },
+  bookButton: {
+    marginTop: 25,
+    backgroundColor: Colors.light.tint,
+  },
+  infoText: {
+    textAlign: 'center',
+    color: Colors.light.textMuted,
+    marginTop: 10,
+  },
+  infoTextSmall: {
+    textAlign: 'center',
+    color: Colors.light.textMuted,
+    fontSize: 13,
+    marginTop: 5,
+  },
+  warningText: {
+    textAlign: 'center',
+    color: 'orange',
+    fontSize: 13,
+    marginTop: 5,
+  },
+  errorText: {
+    textAlign: 'center',
+    color: 'red',
+    margin: 10,
+  },
 });

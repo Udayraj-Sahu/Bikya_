@@ -1,7 +1,7 @@
 // backend/controllers/document.controller.js
 const Document = require('../models/document.model');
 const User = require('../models/user.model');
-const catchAsync = require('../utils/catchAsync');
+const catchAsync = require('../utils/catchAsyns');
 const AppError = require('../utils/appError');
 const { uploadToCloudinary } = require('../config/cloudinary'); // Import helper
 

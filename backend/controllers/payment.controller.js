@@ -1,163 +1,73 @@
-const Razorpay = require('razorpay');
+// backend/controllers/payment.controller.js
 const crypto = require('crypto');
+const Razorpay = require('razorpay');
 const Booking = require('../models/booking.model');
+const User = require('../models/user.model'); // If you need to update user wallet, etc.
+const Bike = require('../models/bike.model');   // To update bike availability
 const AppError = require('../utils/appError');
+const catchAsync = require('../utils/catchAsyns');
 
-// Initialize Razorpay
+// Initialize Razorpay (if not already globally available, but it's good to have it here too)
+// Ensure these are in your .env file
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
   key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
 
-// @desc    Create Razorpay order
-// @route   POST /api/payments/create-order
-// @access  Private
-exports.createOrder = async (req, res, next) => {
-  try {
-    const { bookingId } = req.body;
+exports.verifyPayment = catchAsync(async (req, res, next) => {
+  const { razorpay_order_id, razorpay_payment_id, razorpay_signature, bookingId } = req.body;
 
-    // Find booking
-    const booking = await Booking.findById(bookingId);
-    if (!booking) {
-      return next(new AppError('Booking not found.', 404));
-    }
-
-    // Check if booking belongs to user
-    if (booking.userId.toString() !== req.user.id) {
-      return next(
-        new AppError('You are not authorized to pay for this booking.', 403)
-      );
-    }
-
-    // Check if booking is pending
-    if (booking.status !== 'pending') {
-      return next(
-        new AppError(`Cannot create payment for ${booking.status} booking.`, 400)
-      );
-    }
-
-    // Check if order already exists
-    if (booking.orderId) {
-      // Get existing order details
-      const existingOrder = await razorpay.orders.fetch(booking.orderId);
-      
-      return res.status(200).json({
-        success: true,
-        data: {
-          order: existingOrder,
-        },
-      });
-    }
-
-    // Create Razorpay order
-    const order = await razorpay.orders.create({
-      amount: booking.totalAmount * 100, // Convert to smallest currency unit (paise)
-      currency: 'INR',
-      receipt: `receipt_${bookingId}`,
-      notes: {
-        bookingId: bookingId,
-        userId: req.user.id,
-      },
-    });
-
-    // Update booking with order ID
-    booking.orderId = order.id;
-    await booking.save();
-
-    res.status(201).json({
-      success: true,
-      data: {
-        order,
-      },
-    });
-  } catch (error) {
-    next(error);
+  if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !bookingId) {
+    return next(new AppError('Payment verification details are incomplete.', 400));
   }
-};
 
-// @desc    Verify payment
-// @route   POST /api/payments/verify
-// @access  Private
-exports.verifyPayment = async (req, res, next) => {
-  try {
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+  // Step 1: Verify the signature
+  const body = razorpay_order_id + "|" + razorpay_payment_id;
+  const expectedSignature = crypto
+    .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+    .update(body.toString())
+    .digest('hex');
 
-    // Validate payment signature
-    const generatedSignature = crypto
-      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
-      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-      .digest('hex');
-
-    if (generatedSignature !== razorpay_signature) {
-      return next(new AppError('Invalid payment signature.', 400));
-    }
-
-    // Find booking by order ID
-    const booking = await Booking.findOne({ orderId: razorpay_order_id });
-    if (!booking) {
-      return next(new AppError('Booking not found.', 404));
-    }
-
-    // Update booking status and payment details
-    booking.status = 'active';
-    booking.paymentId = razorpay_payment_id;
-    await booking.save();
-
-    res.status(200).json({
-      success: true,
-      data: {
-        booking,
-      },
-    });
-  } catch (error) {
-    next(error);
+  if (expectedSignature !== razorpay_signature) {
+    // Consider updating booking status to 'payment_failed' here
+    await Booking.findByIdAndUpdate(bookingId, { paymentStatus: 'failed', status: 'payment_failed' });
+    return next(new AppError('Payment verification failed: Invalid signature.', 400));
   }
-};
 
-// @desc    Get payment details
-// @route   GET /api/payments/:paymentId
-// @access  Private (Admin or booking owner)
-exports.getPaymentDetails = async (req, res, next) => {
-  try {
-    const paymentId = req.params.paymentId;
-
-    // Find booking by payment ID
-    const booking = await Booking.findOne({ paymentId })
-      .populate({
-        path: 'userId',
-        select: 'fullName email',
-      })
-      .populate({
-        path: 'bikeId',
-        select: 'model',
-      });
-
-    if (!booking) {
-      return next(new AppError('Payment not found.', 404));
-    }
-
-    // Check authorization
-    if (
-      booking.userId._id.toString() !== req.user.id &&
-      req.user.role !== 'admin' &&
-      req.user.role !== 'owner'
-    ) {
-      return next(
-        new AppError('You are not authorized to view this payment.', 403)
-      );
-    }
-
-    // Get payment details from Razorpay
-    const payment = await razorpay.payments.fetch(paymentId);
-
-    res.status(200).json({
-      success: true,
-      data: {
-        booking,
-        payment,
-      },
-    });
-  } catch (error) {
-    next(error);
+  // Step 2: Signature is valid. Update booking status in your database.
+  const booking = await Booking.findById(bookingId);
+  if (!booking) {
+    // This should ideally not happen if bookingId is correct
+    return next(new AppError('Booking not found for payment verification.', 404));
   }
-};
+
+  // Check if orderId matches
+  if (booking.orderId !== razorpay_order_id) {
+      await Booking.findByIdAndUpdate(bookingId, { paymentStatus: 'failed', status: 'payment_failed' });
+      return next(new AppError('Order ID mismatch during payment verification.', 400));
+  }
+
+  // Update booking details
+  booking.paymentId = razorpay_payment_id;
+  booking.paymentStatus = 'success';
+  booking.status = 'confirmed'; // Or 'active' if booking starts immediately
+  await booking.save();
+
+  // Make the bike unavailable (if not already done during order creation)
+  // Your booking.controller.createBooking already sets availability to false.
+  // This is a good place to ensure it, or if the initial booking creation only created a 'pending_payment' booking.
+  // await Bike.findByIdAndUpdate(booking.bikeId, { availability: false });
+
+  // TODO: Send booking confirmation email/notification to user
+
+  res.status(200).json({
+    success: true,
+    message: 'Payment verified successfully. Booking confirmed.',
+    data: {
+      bookingId: booking._id,
+      paymentId: razorpay_payment_id,
+      orderId: razorpay_order_id,
+      status: booking.status,
+    },
+  });
+});

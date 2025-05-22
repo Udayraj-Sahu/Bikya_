@@ -9,7 +9,7 @@ export const store = configureStore({
   reducer: {
     auth: authReducer,
     bike: bikeReducer, // Your existing reducers
-    booking: bookingReducer, // Your existing reducers
+    bookings: bookingReducer, // Your existing reducers
     documents: documentReducer, // Add the new document reducer
   },
   // Middleware can be added here if needed, e.g., for logging

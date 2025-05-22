@@ -1,76 +1,63 @@
+// backend/controllers/role.controller.js
 const User = require('../models/user.model');
-const AppError = require('../utils/appError');
+const catchAsync = require('../utils/catchAsyns'); // Ensure this utility exists and is correct
+const AppError = require('../utils/appError');   // Ensure this utility exists and is correct
 
-// @desc    Assign role to user
-// @route   PUT /api/roles/:userId
-// @access  Private (Owner only)
-exports.assignRole = async (req, res, next) => {
-  try {
-    const { role } = req.body;
-    const { userId } = req.params;
+exports.getAllUsers = catchAsync(async (req, res, next) => {
+  // Owner should see all users with relevant details
+  // Exclude sensitive information like password hashes even if not selected by default
+  const users = await User.find().select('fullName email phone role joinDate idProofSubmitted idProofApproved');
 
-    // Validate role
-    if (!role || !['user', 'admin', 'owner'].includes(role)) {
-      return next(
-        new AppError('Please provide a valid role (user, admin, or owner).', 400)
-      );
-    }
+  res.status(200).json({
+    status: 'success',
+    results: users.length,
+    data: {
+      users,
+    },
+  });
+});
 
-    // Check if user exists
-    const user = await User.findById(userId);
-    if (!user) {
-      return next(new AppError('User not found.', 404));
-    }
+exports.assignRole = catchAsync(async (req, res, next) => {
+  const { userId } = req.params; // User whose role is to be changed
+  const { role: newRole } = req.body; // New role to assign
 
-    // If assigning owner role, check if another owner already exists
-    if (role === 'owner') {
-      const existingOwner = await User.findOne({ 
-        role: 'owner', 
-        _id: { $ne: userId } 
-      });
-      
-      if (existingOwner) {
-        return next(
-          new AppError('Another user is already assigned as Owner.', 400)
-        );
-      }
-    }
-
-    // Update user role
-    user.role = role;
-    await user.save();
-
-    res.status(200).json({
-      success: true,
-      data: {
-        user: {
-          _id: user._id,
-          fullName: user.fullName,
-          email: user.email,
-          role: user.role,
-        },
-      },
-    });
-  } catch (error) {
-    next(error);
+  if (!['user', 'admin', 'owner'].includes(newRole)) {
+    return next(new AppError('Invalid role specified. Must be user, admin, or owner.', 400));
   }
-};
 
-// @desc    Get all users
-// @route   GET /api/roles/users
-// @access  Private (Owner only)
-exports.getAllUsers = async (req, res, next) => {
-  try {
-    const users = await User.find().select('fullName email phone role joinDate');
-
-    res.status(200).json({
-      success: true,
-      count: users.length,
-      data: {
-        users,
-      },
-    });
-  } catch (error) {
-    next(error);
+  const userToUpdate = await User.findById(userId);
+  if (!userToUpdate) {
+    return next(new AppError('No user found with that ID to update role.', 404));
   }
-};
+
+  // Prevent owner from changing their own role if they are the only owner and trying to demote
+  if (req.user.id === userId && userToUpdate.role === 'owner' && newRole !== 'owner') {
+    const ownerCount = await User.countDocuments({ role: 'owner' });
+    if (ownerCount <= 1) {
+      return next(new AppError('You are the only owner. To change your role, please assign another user as owner first.', 403));
+    }
+  }
+  
+  // If assigning 'owner' role to someone else
+  if (newRole === 'owner' && userToUpdate.role !== 'owner') {
+    const existingOwner = await User.findOne({ role: 'owner' });
+    // If an owner exists and it's not the user being promoted (which is already handled if they were an owner)
+    // and it's not the current logged-in owner trying to make someone else an owner (which is fine)
+    // This logic is to prevent having two owners unless the current owner is making the change.
+    // A simpler rule is: only one owner can exist. If promoting someone to owner, ensure no other owner exists.
+    if (existingOwner && existingOwner._id.toString() !== userId) {
+        return next(new AppError('An owner already exists. Demote the current owner before assigning a new one.', 400));
+    }
+  }
+
+  userToUpdate.role = newRole;
+  await userToUpdate.save({ validateBeforeSave: false }); // Save, skip full validation if only role changes
+
+  res.status(200).json({
+    status: 'success',
+    message: `User ${userToUpdate.fullName}'s role updated to ${newRole}.`,
+    data: {
+      user: userToUpdate, // Send back the updated user
+    },
+  });
+});

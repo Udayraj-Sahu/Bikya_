@@ -1,49 +1,46 @@
-// Mock Razorpay service
+// frontend/services/paymentService.ts
+import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Booking } from '@/types'; // Assuming Booking type is defined
 
-interface OrderResponse {
-  id: string;
-  amount: number;
-  currency: string;
-  receipt: string;
-  status: string;
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://172.20.10.2:5000/api'; // Your correct URL
+
+// Helper to get the token
+const getToken = async () => {
+  return await AsyncStorage.getItem('token');
+};
+
+interface PaymentVerificationPayload {
+  razorpay_order_id: string;
+  razorpay_payment_id: string;
+  razorpay_signature: string;
+  bookingId: string; // Your internal booking ID
 }
 
-interface PaymentVerifyResponse {
+interface PaymentVerificationResponse {
   success: boolean;
-  paymentId: string;
-  orderId: string;
-  signature: string;
+  message: string;
+  data: {
+    bookingId: string;
+    paymentId: string;
+    orderId: string;
+    status: Booking['status']; // e.g., 'confirmed'
+  };
 }
 
-// Create a new Razorpay order
-export const createOrder = async (amount: number, receipt: string): Promise<OrderResponse> => {
-  // Simulate API call
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      // In a real app, this would call the Razorpay API to create an order
-      resolve({
-        id: 'order_' + Math.random().toString(36).substring(2, 15),
-        amount,
-        currency: 'INR',
-        receipt,
-        status: 'created',
-      });
-    }, 500);
+export const verifyPayment = async (payload: PaymentVerificationPayload): Promise<PaymentVerificationResponse> => {
+  const token = await getToken();
+  if (!token) throw new Error('No token found for payment verification');
+
+  console.log('Verifying payment with backend. Payload:', payload);
+  const response = await axios.post(`${API_BASE_URL}/payments/verify`, payload, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
   });
+  // Assuming backend returns: { success: true, message: '...', data: { ... } }
+  return response.data; 
 };
 
-// Verify payment
-export const verifyPayment = async (paymentId: string, orderId: string, signature: string): Promise<PaymentVerifyResponse> => {
-  // Simulate API call
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      // In a real app, this would verify the payment signature with Razorpay
-      resolve({
-        success: true,
-        paymentId,
-        orderId,
-        signature,
-      });
-    }, 500);
-  });
-};
+// You might also have a function here to create a Razorpay order if you decide to separate
+// that logic from the initial booking creation, but for now, createBooking in bookingService handles it.

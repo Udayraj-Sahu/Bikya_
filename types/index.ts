@@ -1,105 +1,108 @@
-export type UserRole = "user" | "admin" | "owner";
+// frontend/types/index.ts
 
-// Updated User interface
-export interface User {
-	id: string; // or _id from MongoDB
-	fullName: string;
-	email: string;
-	phone: string;
-	role: UserRole;
-	createdAt?: string; // Make optional if not always present or needed on frontend
-	location?: {
-		// This matches your current frontend usage
-		latitude: number;
-		longitude: number;
-		// Backend model uses type: 'Point' and coordinates: [lng, lat]
-		// Ensure your backend transforms this to latitude/longitude before sending,
-		// or adjust this type and frontend logic accordingly.
-	};
-	// New fields from backend user model
-	walletBalance?: number;
-	idProofSubmitted?: boolean;
-	idProofApproved?: boolean;
-	// If you plan to populate documents or bookings directly onto the user object from backend:
-	// documents?: Document[];
-	// bookings?: Booking[];
-}
+// --- Other type definitions (User, Document, Bike, etc.) ---
+// Ensure they are complete as per previous discussions
 
-export interface Document {
-	id: string;
-	userId: string;
-	documentType: "idCard" | "drivingLicense";
-	frontImageUri?: string; // URI from Cloudinary
-	backImageUri?: string; // URI from Cloudinary
-	status: "pending" | "approved" | "rejected";
-	createdAt: string;
-	reviewedAt?: string;
-	reviewedBy?: string; // User ID of owner
-	// user?: User; // If populated
-}
-
-export interface Bike {
-	id: string;
-	model: string;
-	category: string;
-	pricePerHour: number;
-	pricePerDay: number;
-	location: {
-		// Frontend expects latitude, longitude
-		latitude: number;
-		longitude: number;
-		address?: string; // Human-readable address
-		// Backend model uses type: 'Point' and coordinates: [lng, lat]
-		// Ensure transformation if needed.
-	};
-	availability: boolean; // Renamed from 'available' for consistency
-	images: string[]; // Array of image URLs
-	createdBy?: string; // Optional on frontend if not always needed
-	createdAt?: string;
+export interface Bike { // Example, ensure your Bike type is complete
+  id: string;
+  model: string;
+  category: string;
+  pricePerHour: number;
+  pricePerDay: number;
+  location: {
+    latitude: number;
+    longitude: number;
+    address?: string;
+  };
+  availability: boolean;
+  images: string[];
+  createdBy?: string;
+  createdAt?: string;
 }
 
 export interface Booking {
-	id: string;
-	userId: string;
-	bikeId: string;
-	bike?: Bike; // Populated bike details
-	startTime: string; // ISO Date string
-	endTime: string; // ISO Date string
-	rentalDuration?: {
-		// More descriptive than just 'duration: number'
-		units: number;
-		type: "hours" | "days";
-	};
-	totalAmount: number;
-	securityDeposit?: number; // Added
-	status:
-		| "pending_payment"
-		| "pending_approval"
-		| "confirmed"
-		| "active"
-		| "completed"
-		| "cancelled"
-		| "rejected"; // Expanded statuses
-	paymentId?: string;
-	orderId?: string; // Razorpay Order ID
-	paymentStatus?: "pending" | "success" | "failed"; // Added
-	createdAt: string;
+  id: string;
+  userId: string;
+  bikeId: string;
+  bike?: Bike; // Populated bike details
+  startTime: string; // ISO Date string
+  endTime: string;   // ISO Date string
+  rentalDuration?: {
+    units: number;
+    type: 'hours' | 'days';
+  };
+  totalAmount: number;
+  securityDeposit?: number;
+  // Updated status to include 'payment_failed'
+  status: 'pending_payment' | 'pending_approval' | 'confirmed' | 'active' | 'completed' | 'cancelled' | 'rejected' | 'payment_failed';
+  orderId?: string; // Razorpay Order ID from backend
+  paymentId?: string; // Razorpay Payment ID after successful payment
+  paymentStatus?: 'pending' | 'success' | 'failed'; // This is different from booking status
+  createdAt: string;
+  review?: { rating: number; comment?: string; createdAt: string };
+  cancelReason?: string; // If you added this on backend
 }
 
-// Document Status type (can be reused)
-export type DocumentApprovalStatus = "pending" | "approved" | "rejected" | null;
+// For Razorpay order object within CreateBookingApiResponse
+export interface RazorpayOrder {
+    id: string;
+    entity: string;
+    amount: number;
+    amount_paid: number;
+    amount_due: number;
+    currency: string;
+    receipt?: string;
+    offer_id?: string | null;
+    status: string; // e.g., 'created', 'attempted', 'paid'
+    attempts?: number;
+    notes?: any;
+    created_at?: number;
+}
 
-// Corrected AuthState interface
+export interface CreateBookingApiResponse {
+  booking: Booking; // Your DB booking object
+  order: RazorpayOrder; // The Razorpay order object
+}
+
+export type DocumentApprovalStatus = 'pending' | 'approved' | 'rejected' | null;
+
+// --- Ensure User, AuthState, etc. are also correctly defined ---
+export type UserRole = 'user' | 'admin' | 'owner';
+
+export interface User {
+  id: string;
+  fullName: string;
+  email: string;
+  phone: string;
+  role: UserRole;
+  createdAt?: string;
+  location?: {
+    latitude: number;
+    longitude: number;
+  };
+  walletBalance?: number;
+  idProofSubmitted?: boolean;
+  idProofApproved?: boolean;
+  documents?: Document[]; // Assuming Document type is defined
+}
+export interface Document {
+  id: string;
+  userId: string;
+  documentType: 'idCard' | 'drivingLicense';
+  frontImageUri?: string;
+  backImageUri?: string;
+  status: DocumentApprovalStatus; // Use the defined type
+  createdAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+}
+
+
 export interface AuthState {
-	user: User | null;
-	token: string | null;
-	isAuthenticated: boolean; // Corrected typo here
-	isLoading: boolean;
-	error: string | null;
-	documentStatus: DocumentApprovalStatus; // Using the defined type
+  user: User | null;
+  token: string | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  error: string | null;
+  documentStatus: DocumentApprovalStatus;
 }
-
-// For Redux store typings (if not already defined elsewhere like store.ts or hooks.ts)
-// import { store } from '@/redux/store';
-// export type RootState = ReturnType<typeof store.getState>;
-// export type AppDispatch = typeof store.dispatch;

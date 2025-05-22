@@ -1,3 +1,4 @@
+// frontend/components/BookingCard.tsx
 import { StyleSheet, Text, View, Image, TouchableOpacity } from 'react-native';
 import React from 'react';
 import { Booking } from '@/types';
@@ -9,41 +10,58 @@ interface BookingCardProps {
   onPress: (booking: Booking) => void;
 }
 
-// Helper function to format date
 const formatDate = (dateString: string) => {
-  const date = new Date(dateString);
-  return date.toLocaleDateString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  });
+  if (!dateString) return 'N/A';
+  try {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+  } catch (e) {
+    return 'Invalid Date';
+  }
 };
 
-// Helper function to format time
 const formatTime = (dateString: string) => {
-  const date = new Date(dateString);
-  return date.toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-  });
+  if (!dateString) return 'N/A';
+  try {
+    const date = new Date(dateString);
+    return date.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+  } catch (e) {
+    return 'Invalid Time';
+  }
 };
 
 export default function BookingCard({ booking, onPress }: BookingCardProps) {
   const getStatusColor = () => {
     switch (booking.status) {
       case 'active':
-        return Colors.light.tertiary;
+      case 'confirmed':
+        return Colors.light.tertiary || '#5bc0de'; // Fallback
       case 'completed':
-        return Colors.light.success;
-      case 'pending':
-        return Colors.light.warning;
+        return Colors.light.success || '#5cb85c'; // Fallback
+      case 'pending_payment':
+      case 'pending_approval':
+        return Colors.light.warning || '#f0ad4e'; // Fallback
       case 'cancelled':
-        return Colors.light.danger;
+      case 'rejected':
+      case 'payment_failed': // <<< ADDED 'payment_failed' HERE
+        return Colors.light.danger || '#d9534f';   // Fallback
       default:
-        return Colors.light.grey4;
+        return Colors.light.grey4 || '#8e8e93'; 
     }
   };
+
+  // Helper to make status display more readable
+  const displayStatus = booking.status.replace(/_/g, ' ').split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
 
   return (
     <TouchableOpacity
@@ -53,12 +71,12 @@ export default function BookingCard({ booking, onPress }: BookingCardProps) {
     >
       <View style={styles.header}>
         <View style={styles.dateContainer}>
-          <Calendar size={14} color={Colors.light.grey4} />
+          <Calendar size={14} color={Colors.light.grey4 || '#8e8e93'} />
           <Text style={styles.date}>{formatDate(booking.startTime)}</Text>
         </View>
         <View style={[styles.statusContainer, { backgroundColor: `${getStatusColor()}20` }]}>
           <Text style={[styles.statusText, { color: getStatusColor() }]}>
-            {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
+            {displayStatus}
           </Text>
         </View>
       </View>
@@ -71,10 +89,10 @@ export default function BookingCard({ booking, onPress }: BookingCardProps) {
         )}
         <View style={styles.bikeDetails}>
           <Text style={styles.bikeModel} numberOfLines={1}>
-            {booking.bike?.model || 'Bike'}
+            {booking.bike?.model || 'Bike Information Unavailable'}
           </Text>
           <View style={styles.timeContainer}>
-            <Clock size={14} color={Colors.light.grey4} />
+            <Clock size={14} color={Colors.light.grey4 || '#8e8e93'} />
             <Text style={styles.timeText}>
               {formatTime(booking.startTime)} - {formatTime(booking.endTime)}
             </Text>
@@ -84,7 +102,7 @@ export default function BookingCard({ booking, onPress }: BookingCardProps) {
 
       <View style={styles.footer}>
         <Text style={styles.amountLabel}>Total Amount</Text>
-        <Text style={styles.amount}>₹{booking.totalAmount}</Text>
+        <Text style={styles.amount}>₹{booking.totalAmount?.toFixed(2) || 'N/A'}</Text>
       </View>
     </TouchableOpacity>
   );
@@ -114,7 +132,7 @@ const styles = StyleSheet.create({
   },
   date: {
     fontSize: 12,
-    color: Colors.light.grey3,
+    color: Colors.light.grey3 || '#c7c7cc', 
     marginLeft: 4,
   },
   statusContainer: {
@@ -139,7 +157,7 @@ const styles = StyleSheet.create({
     width: 70,
     height: 70,
     borderRadius: 8,
-    backgroundColor: Colors.light.divider,
+    backgroundColor: Colors.light.divider || '#e0e0e0', 
   },
   bikeDetails: {
     marginLeft: 12,
@@ -158,7 +176,7 @@ const styles = StyleSheet.create({
   },
   timeText: {
     fontSize: 12,
-    color: Colors.light.grey3,
+    color: Colors.light.grey3 || '#c7c7cc',
     marginLeft: 4,
   },
   footer: {
@@ -167,11 +185,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: Colors.light.divider,
+    borderTopColor: Colors.light.divider || '#e0e0e0',
   },
   amountLabel: {
     fontSize: 12,
-    color: Colors.light.grey4,
+    color: Colors.light.grey4 || '#8e8e93',
   },
   amount: {
     fontSize: 16,

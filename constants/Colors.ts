@@ -23,6 +23,8 @@ export default {
     greyOutline: '#BBBBBB',
     disabled: '#CDCDCD',
     divider: '#E1E1E1',
+    textMuted: "#0777",
+    cardBackground: "#f8f8f8",
     platform: {
       ios: {
         primary: '#FF7E1D',

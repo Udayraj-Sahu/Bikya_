@@ -1,200 +1,157 @@
 // app/(app)/(user)/bookings.tsx
-import { useEffect, useState, useRef } from 'react';
-import { StyleSheet, View, Text, FlatList, TouchableOpacity } from 'react-native';
-import { router } from 'expo-router';
+import React, { useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl, TouchableOpacity } from 'react-native';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
-import { fetchUserBookings, setSelectedBooking } from '@/redux/slices/bookingSlice';
-import Colors from '@/constants/Colors';
-import { ClipboardList } from 'lucide-react-native';
-import BookingCard from '@/components/BookingCard';
+import { fetchUserBookingsThunk, clearBookingError, setSelectedBooking } from '@/redux/slices/bookingSlice';
+import BookingCard from '@/components/BookingCard'; // Your BookingCard component
 import { Booking } from '@/types';
+import Colors from '@/constants/Colors';
+import { router, useFocusEffect } from 'expo-router';
+import { ListX } from 'lucide-react-native';
 
-export default function BookingsScreen() {
+export default function UserBookingsScreen() {
   const dispatch = useAppDispatch();
-  const { user } = useAppSelector(state => state.auth);
-  const { bookings, isLoading, error } = useAppSelector(state => state.bookings);
-  const [activeTab, setActiveTab] = useState<Booking['status'] | 'all'>('all');
-  const hasFetchedBookings = useRef(false);
+  const { user } = useAppSelector((state) => state.auth);
+  const { bookings, isLoading, error } = useAppSelector((state) => state.bookings); // Assuming 'bookings' is the key for bookingSlice
 
-  useEffect(() => {
-    if (user?.id && !hasFetchedBookings.current) {
-      hasFetchedBookings.current = true;
-      dispatch(fetchUserBookings(user.id));
+  const loadUserBookings = useCallback((isRefreshing = false) => {
+    if (user?.id) {
+      if (!isRefreshing) { // Only clear error if not a pull-to-refresh to avoid UI jump
+        dispatch(clearBookingError());
+      }
+      dispatch(fetchUserBookingsThunk(user.id));
+    } else {
+      // Handle case where user is not available (should ideally not happen if screen is protected)
+      console.warn("User ID not found, cannot fetch bookings.");
     }
-  }, [dispatch, user]);
+  }, [dispatch, user?.id]);
+
+  // Fetch bookings when the screen comes into focus or user changes
+  useFocusEffect(
+    useCallback(() => {
+      loadUserBookings();
+      return () => {
+        // Optional: Clear selected booking or other cleanup when screen loses focus
+        // dispatch(setSelectedBooking(null));
+      };
+    }, [loadUserBookings])
+  );
 
   const handleBookingPress = (booking: Booking) => {
     dispatch(setSelectedBooking(booking));
-    router.push('/(app)/(user)/booking-details'as any);
+    // Navigate to a booking details screen if you have one, or show modal
+    // For now, let's assume we might navigate or just select it.
+    // router.push({ pathname: '/(app)/(user)/booking-details', params: { bookingId: booking.id } });
+    console.log("Selected booking:", booking.id);
+    Alert.alert("Booking Details", `Bike Model: ${booking.bike?.model}\nStatus: ${booking.status}`); // Simple alert for now
   };
 
-  const filteredBookings =
-    activeTab === 'all'
-      ? bookings
-      : bookings.filter(booking => booking.status === activeTab);
+  const renderBookingItem = ({ item }: { item: Booking }) => (
+    <BookingCard booking={item} onPress={() => handleBookingPress(item)} />
+  );
+
+  const onRefresh = () => {
+    loadUserBookings(true);
+  };
+
+  if (isLoading && bookings.length === 0) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <ActivityIndicator size="large" color={Colors.light.primary} />
+        <Text style={styles.infoText}>Loading your bookings...</Text>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <ListX size={48} color={Colors.light.danger} />
+        <Text style={styles.errorText}>Error: {error}</Text>
+        <Button title="Retry" onPress={() => loadUserBookings()} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>My Bookings</Text>
+        <Text style={styles.headerTitle}>My Bookings</Text>
       </View>
-
-      {/* Tabs */}
-      <View style={styles.tabContainer}>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'all' && styles.activeTab]}
-          onPress={() => setActiveTab('all')}
-        >
-          <Text style={[styles.tabText, activeTab === 'all' && styles.activeTabText]}>All</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'pending' && styles.activeTab]}
-          onPress={() => setActiveTab('pending')}
-        >
-          <Text style={[styles.tabText, activeTab === 'pending' && styles.activeTabText]}>Pending</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'active' && styles.activeTab]}
-          onPress={() => setActiveTab('active')}
-        >
-          <Text style={[styles.tabText, activeTab === 'active' && styles.activeTabText]}>Active</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'completed' && styles.activeTab]}
-          onPress={() => setActiveTab('completed')}
-        >
-          <Text style={[styles.tabText, activeTab === 'completed' && styles.activeTabText]}>Completed</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'cancelled' && styles.activeTab]}
-          onPress={() => setActiveTab('cancelled')}
-        >
-          <Text style={[styles.tabText, activeTab === 'cancelled' && styles.activeTabText]}>Cancelled</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Bookings List */}
-      {isLoading ? (
-        <View style={styles.centerContainer}>
-          <Text>Loading bookings...</Text>
+      {bookings.length === 0 && !isLoading ? (
+        <View style={styles.centered}>
+          <ListX size={64} color={Colors.light.textMuted} />
+          <Text style={styles.noBookingsText}>You have no bookings yet.</Text>
+          <Button title="Explore Bikes" onPress={() => router.push('/(app)/(user)/explore')} />
         </View>
-      ) : error ? (
-        <View style={styles.centerContainer}>
-          <Text style={styles.errorText}>Error: {error}</Text>
-          <TouchableOpacity
-            onPress={() => {
-              hasFetchedBookings.current = false;
-              dispatch(fetchUserBookings(user!.id));
-            }}
-          >
-            <Text style={styles.retryText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
-      ) : filteredBookings.length > 0 ? (
-        <FlatList
-          data={filteredBookings}
-          renderItem={({ item }) => (
-            <BookingCard booking={item} onPress={handleBookingPress} />
-          )}
-          keyExtractor={item => item.id}
-          contentContainerStyle={styles.bookingsList}
-          showsVerticalScrollIndicator={false}
-        />
       ) : (
-        <View style={styles.centerContainer}>
-          <ClipboardList size={64} color={Colors.light.grey4} style={styles.emptyIcon} />
-          <Text style={styles.emptyText}>No bookings found</Text>
-          <TouchableOpacity
-            style={styles.exploreButton}
-            onPress={() => router.push('/(app)/(user)/explore')}
-          >
-            <Text style={styles.exploreButtonText}>Explore Bikes</Text>
-          </TouchableOpacity>
-        </View>
+        <FlatList
+          data={bookings}
+          renderItem={renderBookingItem}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.listContentContainer}
+          refreshControl={
+            <RefreshControl refreshing={isLoading} onRefresh={onRefresh} colors={[Colors.light.primary || '#000']} />
+          }
+        />
       )}
     </View>
   );
 }
 
+// Simple Button for Retry/Explore - Replace with your actual Button component if different
+const Button = ({ title, onPress }: { title: string, onPress: () => void }) => (
+  <TouchableOpacity onPress={onPress} style={{ marginTop: 20, paddingVertical: 12, paddingHorizontal: 25, backgroundColor: Colors.light.primary || '#007AFF', borderRadius: 8 }}>
+    <Text style={{ color: 'white', textAlign: 'center', fontSize: 16, fontWeight: '600' }}>{title}</Text>
+  </TouchableOpacity>
+);
+
+// Import Alert if not already imported
+import { Alert, Platform } from 'react-native';
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: Colors.light.background || '#f5f5f5',
   },
-  header: {
-    paddingHorizontal: 16,
-    paddingTop: 60,
-    paddingBottom: 16,
-    backgroundColor: 'white',
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: Colors.light.text,
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    backgroundColor: 'white',
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.light.divider,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 8,
-    alignItems: 'center',
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
-  },
-  activeTab: {
-    borderBottomColor: Colors.light.primary,
-  },
-  tabText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: Colors.light.grey3,
-  },
-  activeTabText: {
-    color: Colors.light.primary,
-  },
-  bookingsList: {
-    padding: 16,
-  },
-  centerContainer: {
+  centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 16,
+    padding: 20,
   },
-  emptyIcon: {
-    marginBottom: 16,
-    opacity: 0.5,
+  header: {
+    paddingHorizontal: 15,
+    paddingTop: Platform.OS === 'android' ? 25 : 15, 
+    paddingBottom: 15,
+    backgroundColor: Colors.light.cardBackground || '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.light.divider || '#eee',
   },
-  emptyText: {
-    fontSize: 16,
-    color: Colors.light.grey3,
-    marginBottom: 16,
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    color: Colors.light.tint || '#007AFF',
   },
-  exploreButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: Colors.light.primary,
-    borderRadius: 20,
+  listContentContainer: {
+    padding: 10,
   },
-  exploreButtonText: {
-    color: 'white',
-    fontWeight: '600',
+  infoText: {
+    textAlign: 'center',
+    color: Colors.light.textMuted || '#777',
+    marginTop: 10,
   },
   errorText: {
+    textAlign: 'center',
+    color: Colors.light.danger || 'red',
+    marginVertical: 10,
     fontSize: 16,
-    color: Colors.light.danger,
-    marginBottom: 10,
   },
-  retryText: {
-    fontSize: 16,
-    color: Colors.light.primary,
-    fontWeight: '500',
-  },
+  noBookingsText: {
+    fontSize: 18,
+    color: Colors.light.textMuted || '#777',
+    textAlign: 'center',
+    marginBottom: 20,
+  }
 });

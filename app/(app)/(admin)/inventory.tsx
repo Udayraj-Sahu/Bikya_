@@ -1,28 +1,25 @@
-import Button from "@/components/Button";
+// app/(app)/(admin)/inventory.tsx
+import Button from "@/components/Button"; // Your Button component
+import Input from "@/components/Input"; // Your Input component
 import Colors from "@/constants/Colors";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import {
-	deleteBike,
-	fetchBikes,
-	setSelectedBike,
+	addBikeThunk,
+	clearBikeError,
+	deleteBikeThunk,
+	fetchAllBikesForAdminThunk,
+	updateBikeThunk,
 } from "@/redux/slices/bikeSlice";
 import { Bike } from "@/types";
-import { useRouter } from "expo-router";
-import debounce from "lodash/debounce";
+import { Edit3, PlusCircle, Trash2, XCircle } from "lucide-react-native";
+import React, { useEffect, useState } from "react";
 import {
-	Edit,
-	MapPin,
-	PlusCircle,
-	Search,
-	SlidersHorizontal,
-	Trash2,
-} from "lucide-react-native";
-import { useCallback, useEffect, useRef, useState } from "react";
-import {
+	ActivityIndicator,
 	Alert,
 	FlatList,
 	Image,
-	RefreshControl,
+	Modal,
+	ScrollView,
 	StyleSheet,
 	Text,
 	TextInput,
@@ -30,460 +27,609 @@ import {
 	View,
 } from "react-native";
 
-export default function InventoryScreen() {
-	const router = useRouter();
+// Define the shape of the form data
+interface BikeFormData {
+	id?: string; // Present when editing
+	model: string;
+	category: string;
+	pricePerHour: string; // Input as string, convert to number on submit
+	pricePerDay: string; // Input as string, convert to number on submit
+	images: string[]; // Array of image URLs (comma-separated string in input)
+	availability: boolean;
+	location: {
+		latitude: string; // Input as string
+		longitude: string; // Input as string
+		address?: string;
+	};
+}
+
+const initialFormState: BikeFormData = {
+	model: "",
+	category: "",
+	pricePerHour: "",
+	pricePerDay: "",
+	images: [],
+	availability: true,
+	location: {
+		latitude: "",
+		longitude: "",
+		address: "",
+	},
+};
+
+export default function AdminInventoryScreen() {
 	const dispatch = useAppDispatch();
-	const { bikes, isLoading, error } = useAppSelector((state) => state.bikes);
-	const [searchQuery, setSearchQuery] = useState("");
-	const [refreshing, setRefreshing] = useState(false);
-	const hasFetchedBikes = useRef(false);
+	const { allBikesAdmin, isLoading, isMutating, error } = useAppSelector(
+		(state) => state.bike
+	);
+	const authUser = useAppSelector((state) => state.auth.user);
+
+	const [modalVisible, setModalVisible] = useState(false);
+	const [isEditing, setIsEditing] = useState(false);
+	const [currentBike, setCurrentBike] =
+		useState<BikeFormData>(initialFormState);
+	const [imageInput, setImageInput] = useState(""); // For comma-separated image URLs
 
 	useEffect(() => {
-		if (!hasFetchedBikes.current) {
-			console.log("Fetching bikes");
-			dispatch(fetchBikes());
-			hasFetchedBikes.current = true;
+		if (authUser?.role === "admin" || authUser?.role === "owner") {
+			// Or just admin
+			dispatch(fetchAllBikesForAdminThunk());
 		}
-	}, [dispatch]);
+		dispatch(clearBikeError());
+	}, [dispatch, authUser?.role]);
 
-	const onRefresh = async () => {
-		setRefreshing(true);
-		await dispatch(fetchBikes());
-		setRefreshing(false);
+	const handleOpenModalForAdd = () => {
+		setIsEditing(false);
+		setCurrentBike(initialFormState);
+		setImageInput("");
+		setModalVisible(true);
+		dispatch(clearBikeError());
 	};
 
-	const handleAddBike = () => {
-		router.push("/(app)/(admin)/inventory/add-bike" as any);
+	const handleOpenModalForEdit = (bike: Bike) => {
+		setIsEditing(true);
+		setCurrentBike({
+			id: bike.id,
+			model: bike.model,
+			category: bike.category,
+			pricePerHour: bike.pricePerHour.toString(),
+			pricePerDay: bike.pricePerDay.toString(),
+			images: bike.images,
+			availability: bike.availability,
+			location: {
+				latitude: bike.location.latitude.toString(),
+				longitude: bike.location.longitude.toString(),
+				address: bike.location.address || "",
+			},
+		});
+		setImageInput(bike.images.join(", "));
+		setModalVisible(true);
+		dispatch(clearBikeError());
 	};
 
-	const handleEditBike = useCallback(
-		(bike: Bike) => {
-			console.log("Editing bike:", bike.id);
-			dispatch(setSelectedBike(bike));
-			router.push("/(app)/(admin)/inventory/edit-bike" as any);
-		},
-		[dispatch]
-	);
-	const handleDeleteBike = useCallback(
-		debounce((bike: Bike) => {
-			console.log("Triggering delete alert for bike:", bike.id);
-			Alert.alert(
-				"Delete Bike",
-				`Are you sure you want to delete ${bike.model}?`,
-				[
-					{ text: "Cancel", style: "cancel" },
-					{
-						text: "Delete",
-						onPress: () => {
-							console.log("Deleting bike:", bike.id);
-							dispatch(deleteBike(bike.id));
-						},
-						style: "destructive",
+	const handleDeleteBike = (bikeId: string) => {
+		Alert.alert(
+			"Confirm Delete",
+			"Are you sure you want to delete this bike?",
+			[
+				{ text: "Cancel", style: "cancel" },
+				{
+					text: "Delete",
+					style: "destructive",
+					onPress: async () => {
+						const resultAction = await dispatch(
+							deleteBikeThunk(bikeId)
+						);
+						if (deleteBikeThunk.rejected.match(resultAction)) {
+							Alert.alert(
+								"Error",
+								(resultAction.payload as string) ||
+									"Failed to delete bike."
+							);
+						} else {
+							Alert.alert(
+								"Success",
+								"Bike deleted successfully."
+							);
+						}
 					},
-				]
+				},
+			]
+		);
+	};
+
+	const handleSubmitForm = async () => {
+		// Basic Validation
+		if (
+			!currentBike.model ||
+			!currentBike.category ||
+			!currentBike.pricePerHour ||
+			!currentBike.pricePerDay ||
+			!currentBike.location.latitude ||
+			!currentBike.location.longitude
+		) {
+			Alert.alert(
+				"Validation Error",
+				"Please fill in all required fields (Model, Category, Prices, Location Coordinates)."
 			);
-		}, 300),
-		[dispatch]
-	);
-	const renderBikeItem = useCallback(
-		({ item }: { item: Bike }) => (
-			<View style={styles.bikeCard}>
-				<Image
-					source={{ uri: item.images[0] }}
-					style={styles.bikeImage}
-				/>
-				<View style={styles.bikeContent}>
-					<View style={styles.bikeHeader}>
-						<Text style={styles.bikeModel} numberOfLines={1}>
-							{item.model}
-						</Text>
-						<View style={styles.categoryContainer}>
-							<Text style={styles.categoryText}>
-								{item.category}
-							</Text>
-						</View>
-					</View>
+			return;
+		}
+		if (imageInput.trim() === "") {
+			Alert.alert(
+				"Validation Error",
+				"Please provide at least one image URL."
+			);
+			return;
+		}
 
-					<View style={styles.locationContainer}>
-						<MapPin size={14} color={Colors.light.grey4} />
-						<Text style={styles.locationText} numberOfLines={1}>
-							{item.location.address || "Location unavailable"}
-						</Text>
-					</View>
+		const bikeDataPayload = {
+			model: currentBike.model,
+			category: currentBike.category,
+			pricePerHour: parseFloat(currentBike.pricePerHour),
+			pricePerDay: parseFloat(currentBike.pricePerDay),
+			images: imageInput
+				.split(",")
+				.map((url) => url.trim())
+				.filter((url) => url),
+			availability: currentBike.availability,
+			location: {
+				latitude: parseFloat(currentBike.location.latitude),
+				longitude: parseFloat(currentBike.location.longitude),
+				address: currentBike.location.address,
+			},
+		};
 
-					<View style={styles.priceContainer}>
-						<Text style={styles.price}>
-							₹{item.pricePerHour}/hour
-						</Text>
-						<Text style={styles.price}>
-							₹{item.pricePerDay}/day
-						</Text>
-					</View>
+		if (
+			isNaN(bikeDataPayload.pricePerHour) ||
+			isNaN(bikeDataPayload.pricePerDay) ||
+			isNaN(bikeDataPayload.location.latitude) ||
+			isNaN(bikeDataPayload.location.longitude)
+		) {
+			Alert.alert(
+				"Validation Error",
+				"Prices and location coordinates must be valid numbers."
+			);
+			return;
+		}
 
-					<View style={styles.availabilityContainer}>
-						<View
-							style={[
-								styles.availabilityBadge,
-								{
-									backgroundColor: item.available
-										? `${Colors.light.tertiary}15`
-										: `${Colors.light.danger}15`,
-								},
-							]}>
-							<Text
-								style={[
-									styles.availabilityText,
-									{
-										color: item.available
-											? Colors.light.tertiary
-											: Colors.light.danger,
-									},
-								]}>
-								{item.available ? "Available" : "Unavailable"}
-							</Text>
-						</View>
-					</View>
+		let resultAction;
+		if (isEditing && currentBike.id) {
+			resultAction = await dispatch(
+				updateBikeThunk({
+					bikeId: currentBike.id,
+					bikeData: bikeDataPayload,
+				})
+			);
+		} else {
+			resultAction = await dispatch(
+				addBikeThunk(
+					bikeDataPayload as Omit<
+						Bike,
+						"id" | "createdBy" | "createdAt"
+					>
+				)
+			);
+		}
 
-					<View style={styles.actionsContainer}>
-						<TouchableOpacity
-							style={[styles.actionButton, styles.editButton]}
-							onPress={() => handleEditBike(item)}>
-							<Edit size={16} color={Colors.light.secondary} />
-							<Text style={styles.editButtonText}>Edit</Text>
-						</TouchableOpacity>
-						<TouchableOpacity
-							style={[styles.actionButton, styles.deleteButton]}
-							onPress={() => handleDeleteBike(item)}>
-							<Trash2 size={16} color={Colors.light.danger} />
-							<Text style={styles.deleteButtonText}>Delete</Text>
-						</TouchableOpacity>
-					</View>
-				</View>
+		if (
+			addBikeThunk.fulfilled.match(resultAction) ||
+			updateBikeThunk.fulfilled.match(resultAction)
+		) {
+			Alert.alert(
+				"Success",
+				`Bike ${isEditing ? "updated" : "added"} successfully!`
+			);
+			setModalVisible(false);
+		} else {
+			Alert.alert(
+				"Error",
+				(resultAction.payload as string) ||
+					`Failed to ${isEditing ? "update" : "add"} bike.`
+			);
+		}
+	};
+
+	const handleInputChange = (
+		field: keyof BikeFormData,
+		value: string | boolean
+	) => {
+		setCurrentBike((prev) => ({ ...prev, [field]: value }));
+	};
+
+	const handleLocationChange = (
+		field: "latitude" | "longitude" | "address",
+		value: string
+	) => {
+		setCurrentBike((prev) => ({
+			...prev,
+			location: { ...prev.location, [field]: value },
+		}));
+	};
+
+	const renderBikeItem = ({ item }: { item: Bike }) => (
+		<View style={styles.bikeItem}>
+			<Image
+				source={{
+					uri:
+						item.images[0] ||
+						"https://placehold.co/600x400/eee/ccc?text=No+Image",
+				}}
+				style={styles.bikeImage}
+			/>
+			<View style={styles.bikeInfo}>
+				<Text style={styles.bikeModel}>
+					{item.model}{" "}
+					<Text style={styles.bikeCategory}>({item.category})</Text>
+				</Text>
+				<Text>
+					Price/Hr: ₹{item.pricePerHour.toFixed(2)} | Price/Day: ₹
+					{item.pricePerDay.toFixed(2)}
+				</Text>
+				<Text>
+					Location:{" "}
+					{item.location.address ||
+						`${item.location.latitude.toFixed(
+							4
+						)}, ${item.location.longitude.toFixed(4)}`}
+				</Text>
+				<Text
+					style={
+						item.availability
+							? styles.available
+							: styles.unavailable
+					}>
+					{item.availability ? "Available" : "Unavailable"}
+				</Text>
 			</View>
-		),
-		[handleEditBike, handleDeleteBike]
+			<View style={styles.bikeActions}>
+				<TouchableOpacity
+					onPress={() => handleOpenModalForEdit(item)}
+					style={styles.actionIcon}>
+					<Edit3 size={22} color={Colors.light.primary} />
+				</TouchableOpacity>
+				<TouchableOpacity
+					onPress={() => handleDeleteBike(item.id)}
+					style={styles.actionIcon}>
+					<Trash2 size={22} color={Colors.light.danger} />
+				</TouchableOpacity>
+			</View>
+		</View>
 	);
 
-	const filteredBikes = searchQuery
-		? bikes.filter(
-				(bike) =>
-					bike.model
-						.toLowerCase()
-						.includes(searchQuery.toLowerCase()) ||
-					bike.category
-						.toLowerCase()
-						.includes(searchQuery.toLowerCase())
-		  )
-		: bikes;
-
-	// const renderBikeItem = ({ item }: { item: Bike }) => (
-	// 	<View style={styles.bikeCard}>
-	// 		<Image source={{ uri: item.images[0] }} style={styles.bikeImage} />
-	// 		<View style={styles.bikeContent}>
-	// 			<View style={styles.bikeHeader}>
-	// 				<Text style={styles.bikeModel} numberOfLines={1}>
-	// 					{item.model}
-	// 				</Text>
-	// 				<View style={styles.categoryContainer}>
-	// 					<Text style={styles.categoryText}>{item.category}</Text>
-	// 				</View>
-	// 			</View>
-
-	// 			<View style={styles.locationContainer}>
-	// 				<MapPin size={14} color={Colors.light.grey4} />
-	// 				<Text style={styles.locationText} numberOfLines={1}>
-	// 					{item.location.address || "Location unavailable"}
-	// 				</Text>
-	// 			</View>
-
-	// 			<View style={styles.priceContainer}>
-	// 				<Text style={styles.price}>₹{item.pricePerHour}/hour</Text>
-	// 				<Text style={styles.price}>₹{item.pricePerDay}/day</Text>
-	// 			</View>
-
-	// 			<View style={styles.availabilityContainer}>
-	// 				<View
-	// 					style={[
-	// 						styles.availabilityBadge,
-	// 						{
-	// 							backgroundColor: item.available
-	// 								? `${Colors.light.tertiary}15`
-	// 								: `${Colors.light.danger}15`,
-	// 						},
-	// 					]}>
-	// 					<Text
-	// 						style={[
-	// 							styles.availabilityText,
-	// 							{
-	// 								color: item.available
-	// 									? Colors.light.tertiary
-	// 									: Colors.light.danger,
-	// 							},
-	// 						]}>
-	// 						{item.available ? "Available" : "Unavailable"}
-	// 					</Text>
-	// 				</View>
-	// 			</View>
-
-	// 			<View style={styles.actionsContainer}>
-	// 				<TouchableOpacity
-	// 					style={[styles.actionButton, styles.editButton]}
-	// 					onPress={() => handleEditBike(item)}>
-	// 					<Edit size={16} color={Colors.light.secondary} />
-	// 					<Text style={styles.editButtonText}>Edit</Text>
-	// 				</TouchableOpacity>
-	// 				<TouchableOpacity
-	// 					style={[styles.actionButton, styles.deleteButton]}
-	// 					onPress={() => handleDeleteBike(item)}>
-	// 					<Trash2 size={16} color={Colors.light.danger} />
-	// 					<Text style={styles.deleteButtonText}>Delete</Text>
-	// 				</TouchableOpacity>
-	// 			</View>
-	// 		</View>
-	// 	</View>
-	// );
+	if (isLoading && allBikesAdmin.length === 0) {
+		return (
+			<View style={styles.centered}>
+				<ActivityIndicator size="large" color={Colors.light.primary} />
+				<Text>Loading bikes...</Text>
+			</View>
+		);
+	}
 
 	return (
 		<View style={styles.container}>
 			<View style={styles.header}>
-				<Text style={styles.title}>Bike Inventory</Text>
-			</View>
-
-			<View style={styles.searchContainer}>
-				<View style={styles.searchBar}>
-					<Search size={20} color={Colors.light.grey4} />
-					<TextInput
-						style={styles.searchInput}
-						placeholder="Search bikes..."
-						value={searchQuery}
-						onChangeText={setSearchQuery}
-						placeholderTextColor={Colors.light.grey4}
-					/>
-				</View>
-				<TouchableOpacity style={styles.filterButton}>
-					<SlidersHorizontal size={20} color={Colors.light.text} />
-				</TouchableOpacity>
-			</View>
-
-			<View style={styles.listHeader}>
-				<Text style={styles.listTitle}>
-					All Bikes ({filteredBikes.length})
-				</Text>
+				<Text style={styles.headerTitle}>Bike Inventory</Text>
 				<Button
 					title="Add Bike"
-					onPress={handleAddBike}
+					onPress={handleOpenModalForAdd}
 					icon={<PlusCircle size={18} color="white" />}
 				/>
 			</View>
 
+			{error && !modalVisible && (
+				<Text style={styles.errorTextList}>Error: {error}</Text>
+			)}
+
 			<FlatList
-				data={filteredBikes}
+				data={allBikesAdmin}
 				renderItem={renderBikeItem}
 				keyExtractor={(item) => item.id}
-				contentContainerStyle={styles.bikesList}
-				showsVerticalScrollIndicator={false}
-				refreshControl={
-					<RefreshControl
-						refreshing={refreshing}
-						onRefresh={onRefresh}
-						colors={[Colors.light.primary]}
-						tintColor={Colors.light.primary}
-					/>
-				}
+				contentContainerStyle={styles.listContentContainer}
+				refreshing={isLoading}
+				onRefresh={() => dispatch(fetchAllBikesForAdminThunk())}
 				ListEmptyComponent={
-					<View style={styles.emptyContainer}>
-						<Text style={styles.emptyText}>
-							{searchQuery
-								? "No bikes match your search"
-								: "No bikes in inventory"}
-						</Text>
-						<Button
-							title="Add New Bike"
-							onPress={handleAddBike}
-							icon={<PlusCircle size={18} color="white" />}
-						/>
+					<View style={styles.centered}>
+						<Text>No bikes found in inventory.</Text>
 					</View>
 				}
 			/>
+
+			<Modal
+				animationType="slide"
+				transparent={true}
+				visible={modalVisible}
+				onRequestClose={() => setModalVisible(false)}>
+				<View style={styles.modalOverlay}>
+					<View style={styles.modalContainer}>
+						<ScrollView>
+							<View style={styles.modalHeader}>
+								<Text style={styles.modalTitle}>
+									{isEditing ? "Edit Bike" : "Add New Bike"}
+								</Text>
+								<TouchableOpacity
+									onPress={() => setModalVisible(false)}>
+									<XCircle size={28} />
+								</TouchableOpacity>
+							</View>
+
+							{error && modalVisible && (
+								<Text style={styles.errorTextModal}>
+									Error: {error}
+								</Text>
+							)}
+
+							<Input
+								label="Model"
+								value={currentBike.model}
+								onChangeText={(text) =>
+									handleInputChange("model", text)
+								}
+								placeholder="e.g., Honda Activa 6G"
+							/>
+							<Input
+								label="Category"
+								value={currentBike.category}
+								onChangeText={(text) =>
+									handleInputChange("category", text)
+								}
+								placeholder="e.g., Scooter, Mountain Bike"
+							/>
+							<Input
+								label="Price Per Hour (₹)"
+								value={currentBike.pricePerHour}
+								onChangeText={(text) =>
+									handleInputChange("pricePerHour", text)
+								}
+								keyboardType="numeric"
+								placeholder="e.g., 50"
+							/>
+							<Input
+								label="Price Per Day (₹)"
+								value={currentBike.pricePerDay}
+								onChangeText={(text) =>
+									handleInputChange("pricePerDay", text)
+								}
+								keyboardType="numeric"
+								placeholder="e.g., 500"
+							/>
+
+							<Text style={styles.formLabel}>
+								Image URLs (comma-separated)
+							</Text>
+							<TextInput
+								style={styles.textInputLarge}
+								value={imageInput}
+								onChangeText={setImageInput}
+								placeholder="e.g., https://url1.jpg, https://url2.png"
+								multiline
+								numberOfLines={3}
+							/>
+
+							<Text style={styles.formLabel}>
+								Location Latitude
+							</Text>
+							<TextInput
+								style={styles.textInput}
+								value={currentBike.location.latitude}
+								onChangeText={(text) =>
+									handleLocationChange("latitude", text)
+								}
+								keyboardType="numeric"
+								placeholder="e.g., 26.8467"
+							/>
+
+							<Text style={styles.formLabel}>
+								Location Longitude
+							</Text>
+							<TextInput
+								style={styles.textInput}
+								value={currentBike.location.longitude}
+								onChangeText={(text) =>
+									handleLocationChange("longitude", text)
+								}
+								keyboardType="numeric"
+								placeholder="e.g., 80.9462"
+							/>
+
+							<Text style={styles.formLabel}>
+								Location Address (Optional)
+							</Text>
+							<TextInput
+								style={styles.textInput}
+								value={currentBike.location.address}
+								onChangeText={(text) =>
+									handleLocationChange("address", text)
+								}
+								placeholder="e.g., 123 Bike Street, City"
+							/>
+
+							<View style={styles.switchContainer}>
+								<Text style={styles.formLabel}>Available:</Text>
+								<Switch
+									trackColor={{
+										false: "#767577",
+										true: Colors.light.primary,
+									}}
+									thumbColor={
+										currentBike.availability
+											? Colors.light.tint
+											: "#f4f3f4"
+									}
+									ios_backgroundColor="#3e3e3e"
+									onValueChange={(value) =>
+										handleInputChange("availability", value)
+									}
+									value={currentBike.availability}
+								/>
+							</View>
+
+							<Button
+								title={
+									isMutating
+										? "Saving..."
+										: isEditing
+										? "Update Bike"
+										: "Add Bike"
+								}
+								onPress={handleSubmitForm}
+								disabled={isMutating}
+							/>
+						</ScrollView>
+					</View>
+				</View>
+			</Modal>
 		</View>
 	);
 }
 
+// Need to import Switch
+import { Switch } from "react-native";
+
 const styles = StyleSheet.create({
 	container: {
 		flex: 1,
-		backgroundColor: "#F8F9FA",
+		backgroundColor: Colors.light.background,
 	},
-	header: {
-		paddingHorizontal: 16,
-		paddingTop: 60,
-		paddingBottom: 16,
-		backgroundColor: "white",
-	},
-	title: {
-		fontSize: 22,
-		fontWeight: "700",
-		color: Colors.light.text,
-	},
-	searchContainer: {
-		flexDirection: "row",
-		paddingHorizontal: 16,
-		paddingBottom: 16,
-		backgroundColor: "white",
-	},
-	searchBar: {
+	centered: {
 		flex: 1,
-		flexDirection: "row",
-		alignItems: "center",
-		backgroundColor: Colors.light.divider,
-		borderRadius: 8,
-		paddingHorizontal: 12,
-		paddingVertical: 10,
-		marginRight: 12,
-	},
-	searchInput: {
-		flex: 1,
-		marginLeft: 8,
-		fontSize: 16,
-		color: Colors.light.text,
-	},
-	filterButton: {
-		width: 44,
-		height: 44,
 		justifyContent: "center",
 		alignItems: "center",
-		backgroundColor: Colors.light.divider,
-		borderRadius: 8,
+		padding: 20,
 	},
-	listHeader: {
+	header: {
 		flexDirection: "row",
 		justifyContent: "space-between",
 		alignItems: "center",
-		paddingHorizontal: 16,
-		paddingVertical: 16,
-	},
-	listTitle: {
-		fontSize: 16,
-		fontWeight: "600",
-		color: Colors.light.text,
-	},
-	bikesList: {
-		paddingHorizontal: 16,
-		paddingBottom: 16,
-	},
-	bikeCard: {
+		padding: 15,
+		borderBottomWidth: 1,
+		borderBottomColor: Colors.light.divider,
 		backgroundColor: "white",
-		borderRadius: 12,
-		marginBottom: 16,
+	},
+	headerTitle: {
+		fontSize: 20,
+		fontWeight: "bold",
+		color: Colors.light.tint,
+	},
+	listContentContainer: {
+		padding: 10,
+	},
+	bikeItem: {
+		backgroundColor: "white",
+		borderRadius: 8,
+		padding: 15,
+		marginVertical: 8,
+		flexDirection: "row",
+		alignItems: "center",
 		shadowColor: "#000",
-		shadowOffset: { width: 0, height: 2 },
+		shadowOffset: { width: 0, height: 1 },
 		shadowOpacity: 0.05,
-		shadowRadius: 10,
+		shadowRadius: 2,
 		elevation: 2,
-		overflow: "hidden",
 	},
 	bikeImage: {
-		width: "100%",
-		height: 150,
+		width: 70,
+		height: 70,
+		borderRadius: 8,
+		marginRight: 15,
 	},
-	bikeContent: {
-		padding: 12,
-	},
-	bikeHeader: {
-		flexDirection: "row",
-		justifyContent: "space-between",
-		alignItems: "center",
-		marginBottom: 8,
+	bikeInfo: {
+		flex: 1,
 	},
 	bikeModel: {
 		fontSize: 16,
-		fontWeight: "600",
+		fontWeight: "bold",
 		color: Colors.light.text,
-		flex: 1,
-		marginRight: 8,
 	},
-	categoryContainer: {
-		backgroundColor: "#F0F0F0",
-		paddingHorizontal: 8,
-		paddingVertical: 4,
-		borderRadius: 4,
+	bikeCategory: {
+		fontSize: 13,
 	},
-	categoryText: {
-		fontSize: 12,
+	available: {
+		color: "green",
+		fontSize: 13,
 		fontWeight: "500",
-		color: Colors.light.grey2,
+		marginTop: 3,
 	},
-	locationContainer: {
-		flexDirection: "row",
+	unavailable: {
+		color: "red",
+		fontSize: 13,
+		fontWeight: "500",
+		marginTop: 3,
+	},
+	bikeActions: {
+		flexDirection: "column", // Changed to column for better spacing if icons are small
+		justifyContent: "space-around", // Distribute space
+		marginLeft: 10,
+	},
+	actionIcon: {
+		padding: 8, // Add padding for easier touch
+	},
+	modalOverlay: {
+		flex: 1,
+		backgroundColor: "rgba(0,0,0,0.5)",
+		justifyContent: "center",
 		alignItems: "center",
-		marginBottom: 8,
 	},
-	locationText: {
-		fontSize: 12,
-		color: Colors.light.grey4,
-		marginLeft: 4,
+	modalContainer: {
+		width: "90%",
+		maxHeight: "85%",
+		backgroundColor: "white",
+		borderRadius: 10,
+		padding: 20,
+		shadowColor: "#000",
+		shadowOffset: { width: 0, height: 2 },
+		shadowOpacity: 0.25,
+		shadowRadius: 4,
+		elevation: 5,
 	},
-	priceContainer: {
+	modalHeader: {
 		flexDirection: "row",
 		justifyContent: "space-between",
-		marginBottom: 8,
+		alignItems: "center",
+		marginBottom: 15,
 	},
-	price: {
-		fontSize: 14,
-		fontWeight: "600",
-		color: Colors.light.primary,
+	modalTitle: {
+		fontSize: 18,
+		fontWeight: "bold",
 	},
-	availabilityContainer: {
-		marginBottom: 12,
+	formLabel: {
+		fontSize: 15,
+		fontWeight: "500",
+		color: Colors.light.text,
+		marginTop: 10,
+		marginBottom: 5,
 	},
-	availabilityBadge: {
-		alignSelf: "flex-start",
-		paddingHorizontal: 8,
-		paddingVertical: 4,
-		borderRadius: 4,
+	textInput: {
+		// Style for regular TextInput if not using custom Input component for all
+		borderWidth: 1,
+		borderColor: Colors.light.divider,
+		padding: 10,
+		borderRadius: 5,
+		marginBottom: 10,
+		fontSize: 15,
 	},
-	availabilityText: {
-		fontSize: 12,
-		fontWeight: "600",
+	textInputLarge: {
+		borderWidth: 1,
+		borderColor: Colors.light.divider,
+		padding: 10,
+		borderRadius: 5,
+		marginBottom: 10,
+		fontSize: 15,
+		minHeight: 60,
+		textAlignVertical: "top",
 	},
-	actionsContainer: {
-		flexDirection: "row",
-		justifyContent: "flex-end",
-	},
-	actionButton: {
+	switchContainer: {
 		flexDirection: "row",
 		alignItems: "center",
-		paddingHorizontal: 12,
-		paddingVertical: 6,
-		borderRadius: 4,
-		marginLeft: 8,
+		justifyContent: "space-between",
+		marginVertical: 15,
 	},
-	editButton: {
-		backgroundColor: `${Colors.light.secondary}15`,
-	},
-	deleteButton: {
-		backgroundColor: `${Colors.light.danger}15`,
-	},
-	editButtonText: {
-		fontSize: 12,
-		fontWeight: "600",
-		color: Colors.light.secondary,
-		marginLeft: 4,
-	},
-	deleteButtonText: {
-		fontSize: 12,
-		fontWeight: "600",
-		color: Colors.light.danger,
-		marginLeft: 4,
-	},
-	emptyContainer: {
-		padding: 24,
-		alignItems: "center",
-	},
-	emptyText: {
-		fontSize: 16,
-		color: Colors.light.grey3,
-		marginBottom: 16,
+	errorTextList: {
+		color: "red",
 		textAlign: "center",
+		paddingVertical: 10,
+	},
+	errorTextModal: {
+		color: "red",
+		marginBottom: 10,
 	},
 });

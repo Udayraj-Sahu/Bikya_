@@ -1,14 +1,14 @@
 // app/(app)/(admin)/_layout.tsx
 import React from 'react';
 import { Tabs } from 'expo-router';
-import { LayoutDashboard, ListChecks, UserCircle, Bike as BikeIcon } from 'lucide-react-native'; // Example icons
+import { LayoutDashboard, ListChecks, UserCircle, Bike as BikeIcon } from 'lucide-react-native'; 
 import Colors from '@/constants/Colors';
 
 export default function AdminTabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors.light.primary, // Or a specific admin theme color
+        tabBarActiveTintColor: Colors.light.primary, 
         tabBarInactiveTintColor: Colors.light.tabIconDefault,
         tabBarStyle: {
           borderTopWidth: 1,
@@ -32,18 +32,19 @@ export default function AdminTabLayout() {
         }}
       />
       <Tabs.Screen
-        name="bookings" // Corresponds to app/(app)/(admin)/bookings.tsx (View all bookings)
+        name="bookings" // <<<< ENSURE THIS MATCHES FILENAME 'bookings.tsx'
         options={{
           title: 'All Bookings',
           tabBarIcon: ({ color, size }) => <ListChecks size={size} color={color} />,
         }}
       />
-      {/* You can add a Profile tab for the Admin as well */}
+      {/* Optional Profile Tab for Admin */}
       {/* <Tabs.Screen
         name="profile" // Create app/(app)/(admin)/profile.tsx if needed
         options={{
           title: 'Profile',
           tabBarIcon: ({ color, size }) => <UserCircle size={size} color={color} />,
+          // href: null, // If it's not a primary tab but part of the stack
         }}
       /> */}
     </Tabs>

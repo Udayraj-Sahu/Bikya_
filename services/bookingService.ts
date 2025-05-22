@@ -1,121 +1,87 @@
-import { Booking, Bike } from '@/types';
-import { getBikeById } from './bikeService';
+// frontend/services/bookingService.ts
+import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Booking, CreateBookingApiResponse, User } from '@/types'; // Import CreateBookingApiResponse
 
-// Mock data
-const mockBookings: Booking[] = [
-  {
-    id: '1',
-    userId: '1',
-    bikeId: '1',
-    startTime: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
-    endTime: new Date(Date.now() + 3600000).toISOString(), // 1 hour from now
-    duration: 2, // 2 hours
-    totalAmount: 20,
-    status: 'active',
-    paymentId: 'pay_123456',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: '2',
-    userId: '1',
-    bikeId: '2',
-    startTime: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
-    endTime: new Date(Date.now() - 43200000).toISOString(), // 12 hours ago
-    duration: 12, // 12 hours
-    totalAmount: 48,
-    status: 'completed',
-    paymentId: 'pay_123457',
-    createdAt: new Date(Date.now() - 90000000).toISOString(),
-  },
-];
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://172.20.10.2:5000/api';
 
-// Get all bookings
-export const getAllBookings = async (): Promise<Booking[]> => {
-  // Simulate API call
-  return new Promise((resolve) => {
-    setTimeout(async () => {
-      // Fetch bike details for each booking
-      const bookingsWithBikes = await Promise.all(
-        mockBookings.map(async (booking) => {
-          try {
-            const bike = await getBikeById(booking.bikeId);
-            return { ...booking, bike };
-          } catch (error) {
-            return booking;
-          }
-        })
-      );
-      resolve(bookingsWithBikes);
-    }, 500);
-  });
+const getToken = async () => await AsyncStorage.getItem('token');
+
+// Type for the data sent to backend to create a booking
+// These are the fields the frontend provides initially.
+export interface CreateBookingPayload {
+  userId: string;
+  bikeId: string;
+  startTime: string; // ISO string
+  // duration is calculated into endTime or sent as duration (e.g., in hours)
+  // Let's assume backend expects startTime and endTime, or startTime and duration (in hours)
+  // For now, let's match the thunk's Omit structure and add what's needed.
+  // The thunk's Omit was: Omit<Booking, 'id' | 'createdAt' | 'status' | 'orderId' | 'paymentId' | 'paymentStatus' | 'userId'> & { userId: string }
+  // This effectively means: bikeId, startTime, endTime, rentalDuration, totalAmount, securityDeposit
+  // However, totalAmount and endTime are often calculated on backend based on duration.
+  // Let's simplify: frontend sends bikeId, startTime, and duration (e.g., in hours).
+  rentalDurationHours: number; // Example: duration in hours
+  // totalAmount and endTime will be calculated by backend.
+  // securityDeposit might be part of bike details or a fixed amount.
+}
+
+export const createBooking = async (bookingData: CreateBookingPayload): Promise<CreateBookingApiResponse> => {
+  const token = await getToken();
+  if (!token) throw new Error('Authentication token not found.');
+
+  // The backend /api/bookings POST endpoint receives this data
+  // and internally creates the Razorpay order and the booking document.
+  // It then returns { data: { booking: Booking, order: RazorpayOrder } }
+  const response = await axios.post<{ data: CreateBookingApiResponse }>(
+    `${API_BASE_URL}/bookings`,
+    bookingData,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (response.data && response.data.data && response.data.data.booking && response.data.data.order) {
+    return response.data.data;
+  }
+  throw new Error("Invalid response structure from create booking API.");
 };
 
-// Get bookings by user ID
 export const getUserBookings = async (userId: string): Promise<Booking[]> => {
-  // Simulate API call
-  return new Promise((resolve) => {
-    setTimeout(async () => {
-      const userBookings = mockBookings.filter(booking => booking.userId === userId);
-      
-      // Fetch bike details for each booking
-      const bookingsWithBikes = await Promise.all(
-        userBookings.map(async (booking) => {
-          try {
-            const bike = await getBikeById(booking.bikeId);
-            return { ...booking, bike };
-          } catch (error) {
-            return booking;
-          }
-        })
-      );
-      resolve(bookingsWithBikes);
-    }, 500);
-  });
+  const token = await getToken();
+  if (!token) throw new Error('Authentication token not found.');
+  // Assuming backend route /api/bookings (GET) filters by userId if not admin
+  // or a specific route like /api/users/:userId/bookings
+  const response = await axios.get<{ data: { bookings: Booking[] } }>(
+    `${API_BASE_URL}/bookings`, // This endpoint in your backend already filters by user if not admin
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  return response.data.data.bookings;
 };
 
-// Create new booking
-export const createBooking = async (booking: Omit<Booking, 'id' | 'createdAt'>): Promise<Booking> => {
-  // Simulate API call
-  return new Promise(async (resolve) => {
-    setTimeout(async () => {
-      const newBooking: Booking = {
-        ...booking,
-        id: (mockBookings.length + 1).toString(),
-        createdAt: new Date().toISOString(),
-      };
-      
-      mockBookings.push(newBooking);
-      
-      // Add bike details
-      try {
-        const bike = await getBikeById(booking.bikeId);
-        resolve({ ...newBooking, bike });
-      } catch (error) {
-        resolve(newBooking);
-      }
-    }, 500);
-  });
+export const getAllBookings = async (): Promise<Booking[]> => { // For Admin
+  const token = await getToken();
+  if (!token) throw new Error('Authentication token not found.');
+  const response = await axios.get<{ data: { bookings: Booking[] } }>(
+    `${API_BASE_URL}/bookings?adminView=true`, // Assuming backend filters by default, or needs a flag
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  return response.data.data.bookings;
 };
 
-// Update booking status
+export const getBookingById = async (bookingId: string): Promise<Booking> => {
+  const token = await getToken();
+  if (!token) throw new Error('Authentication token not found.');
+  const response = await axios.get<{ data: { booking: Booking } }>(
+    `${API_BASE_URL}/bookings/${bookingId}`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  return response.data.data.booking;
+};
+
 export const updateBookingStatus = async (id: string, status: Booking['status']): Promise<Booking> => {
-  // Simulate API call
-  return new Promise((resolve, reject) => {
-    setTimeout(async () => {
-      const index = mockBookings.findIndex(b => b.id === id);
-      if (index !== -1) {
-        mockBookings[index] = { ...mockBookings[index], status };
-        
-        // Add bike details
-        try {
-          const bike = await getBikeById(mockBookings[index].bikeId);
-          resolve({ ...mockBookings[index], bike });
-        } catch (error) {
-          resolve(mockBookings[index]);
-        }
-      } else {
-        reject(new Error('Booking not found'));
-      }
-    }, 500);
-  });
+  const token = await getToken();
+  if (!token) throw new Error('Authentication token not found.');
+  const response = await axios.patch<{ data: { booking: Booking } }>( // Assuming PATCH for updates
+    `${API_BASE_URL}/bookings/${id}`, // Your backend uses PUT, but PATCH is common for status updates
+    { status },
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  return response.data.data.booking;
 };

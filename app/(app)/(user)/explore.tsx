@@ -1,158 +1,127 @@
-import { useEffect, useState } from 'react';
-import { StyleSheet, View, Text, FlatList, TextInput, TouchableOpacity, Dimensions } from 'react-native';
+// app/(app)/(user)/explore.tsx
+import React, { useEffect, useState, useCallback } from 'react';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl, TextInput, TouchableOpacity, Platform } from 'react-native';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
-import { fetchBikes, setSelectedBike } from '@/redux/slices/bikeSlice';
-import { router } from 'expo-router';
-import Colors from '@/constants/Colors';
-import { Search, Sliders, MapPin } from 'lucide-react-native';
-import BikeCard from '@/components/BikeCard';
-import MapView, { Marker } from 'react-native-maps';
+import { fetchAvailableBikesThunk, clearBikeError } from '@/redux/slices/bikeSlice';
+import BikeCard from '@/components/BikeCard'; 
 import { Bike } from '@/types';
-const { width } = Dimensions.get('window');
+import Colors from '@/constants/Colors';
+import { router, useFocusEffect } from 'expo-router';
+import { MapPin, Search as SearchIcon, Filter } from 'lucide-react-native';
+import { useLocation } from '@/hooks/useLocation'; // Your custom hook
 
 export default function ExploreScreen() {
   const dispatch = useAppDispatch();
-  const { bikes, isLoading } = useAppSelector(state => state.bikes);
-  const { user } = useAppSelector(state => state.auth);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
+  const { bikes, isLoading, error } = useAppSelector((state) => state.bike);
   
+  const { 
+    location, // This is typed as { latitude: number; longitude: number; } | null
+    errorMsg: locationError, 
+    loading: locationLoading, 
+    requestLocationPermission
+  } = useLocation();
+
+  const [searchTerm, setSearchTerm] = useState('');
+  // ... other state ...
+
+  const loadBikes = useCallback((isRefreshing = false) => {
+    dispatch(clearBikeError());
+    let locationParams;
+    // CORRECT USAGE: Access latitude and longitude directly from the 'location' object
+    if (location && location.latitude !== undefined && location.longitude !== undefined) {
+      locationParams = {
+        latitude: location.latitude,
+        longitude: location.longitude,
+        maxDistance: 20000, 
+      };
+    }
+    dispatch(fetchAvailableBikesThunk(locationParams));
+  }, [dispatch, location]); // 'location' from useLocation() is a dependency
+
   useEffect(() => {
-    dispatch(fetchBikes());
-  }, [dispatch]);
-  
-  const handleBikePress = (bike : Bike) => {
-    dispatch(setSelectedBike(bike));
-    router.push('/(app)/(user)/bike-details');
+    requestLocationPermission(); 
+  }, [requestLocationPermission]);
+
+  useFocusEffect( 
+    useCallback(() => {
+      loadBikes();
+      return () => {};
+    }, [loadBikes])
+  );
+
+  // ... rest of your component (handleBikePress, renderBikeItem, UI) ...
+  // Ensure no other part of this file tries to do location.coords
+
+  // (The UI and styles part of the component would be here as previously provided)
+  // For brevity, I'm omitting the full UI code again, assuming it doesn't misuse 'location'.
+  // The key is the 'loadBikes' function above.
+
+  // --- Start of UI (ensure no location.coords here) ---
+  const handleBikePress = (bikeId: string) => {
+    router.push({ pathname: '/(app)/(user)/bike-details', params: { bikeId } });
   };
-  
-  const filteredBikes = searchQuery
-    ? bikes.filter(bike => 
-        bike.model.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        bike.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (bike.location.address && bike.location.address.toLowerCase().includes(searchQuery.toLowerCase()))
-      )
-    : bikes;
-  
-  const categories = ['All', 'Mountain', 'Road', 'Cruiser', 'Electric'];
-  const [selectedCategory, setSelectedCategory] = useState('All');
-  
-  const categoryFilteredBikes = selectedCategory === 'All' 
-    ? filteredBikes 
-    : filteredBikes.filter(bike => bike.category === selectedCategory);
-  
+
+  const renderBikeItem = ({ item }: { item: Bike }) => (
+    <BikeCard bike={item} onPress={() => handleBikePress(item.id)} />
+  );
+
+  const onRefresh = () => {
+    loadBikes(true);
+  };
+
+  const filteredBikes = bikes.filter(bike => 
+    bike.model.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    bike.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (bike.location.address && bike.location.address.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
+
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Find Bikes</Text>
-        {user?.location && (
-          <View style={styles.locationContainer}>
-            <MapPin size={14} color={Colors.light.primary} />
-            <Text style={styles.locationText}>Bengaluru, Karnataka</Text>
-          </View>
-        )}
+        <Text style={styles.headerTitle}>Explore Bikes</Text>
       </View>
-      
-      {/* Search Bar */}
+
       <View style={styles.searchContainer}>
-        <View style={styles.searchBar}>
-          <Search size={20} color={Colors.light.grey4} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search by model, location..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholderTextColor={Colors.light.grey4}
-          />
+        <SearchIcon size={20} color={Colors.light.textMuted} style={styles.searchIcon} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search by model, category, or location..."
+          value={searchTerm}
+          onChangeText={setSearchTerm}
+          placeholderTextColor={Colors.light.textMuted}
+        />
+      </View>
+
+      {locationLoading && <Text style={styles.infoText}>Fetching your location...</Text>}
+      {locationError && <Text style={styles.errorText}>Location Error: {locationError}. Showing all bikes.</Text>}
+      
+      {isLoading && bikes.length === 0 ? (
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color={Colors.light.primary} />
+          <Text style={styles.infoText}>Finding nearby bikes...</Text>
         </View>
-        <TouchableOpacity style={styles.filterButton}>
-          <Sliders size={20} color={Colors.light.text} />
-        </TouchableOpacity>
-      </View>
-      
-      {/* View Mode Toggle */}
-      <View style={styles.viewModeContainer}>
-        <TouchableOpacity 
-          style={[styles.viewModeButton, viewMode === 'list' && styles.viewModeButtonActive]} 
-          onPress={() => setViewMode('list')}
-        >
-          <Text style={[styles.viewModeText, viewMode === 'list' && styles.viewModeTextActive]}>List</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.viewModeButton, viewMode === 'map' && styles.viewModeButtonActive]}
-          onPress={() => setViewMode('map')}
-        >
-          <Text style={[styles.viewModeText, viewMode === 'map' && styles.viewModeTextActive]}>Map</Text>
-        </TouchableOpacity>
-      </View>
-      
-      {/* Categories */}
-      <View style={styles.categoriesContainer}>
-        <FlatList
-          data={categories}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={[
-                styles.categoryItem,
-                selectedCategory === item && styles.categoryItemSelected
-              ]}
-              onPress={() => setSelectedCategory(item)}
-            >
-              <Text
-                style={[
-                  styles.categoryText,
-                  selectedCategory === item && styles.categoryTextSelected
-                ]}
-              >
-                {item}
-              </Text>
-            </TouchableOpacity>
-          )}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.categoriesList}
-        />
-      </View>
-      
-      {viewMode === 'list' ? (
-        <FlatList
-          data={categoryFilteredBikes}
-          renderItem={({ item }) => (
-            <BikeCard bike={item} onPress={handleBikePress} />
-          )}
-          keyExtractor={item => item.id}
-          contentContainerStyle={styles.bikesList}
-          showsVerticalScrollIndicator={false}
-          numColumns={2}
-          columnWrapperStyle={styles.bikeColumns}
-        />
+      ) : error ? (
+        <View style={styles.centered}>
+          <Text style={styles.errorText}>Error: {error}</Text>
+          <Button title="Retry" onPress={() => loadBikes()} />
+        </View>
+      ) : filteredBikes.length === 0 ? (
+        <View style={styles.centered}>
+          <Text style={styles.noBikesText}>No bikes available matching your criteria.</Text>
+          {searchTerm !== '' && <Button title="Clear Search" onPress={() => setSearchTerm('')} />}
+        </View>
       ) : (
-        <View style={styles.mapContainer}>
-          <MapView
-            style={styles.map}
-            initialRegion={{
-              latitude: user?.location?.latitude || 12.9716,
-              longitude: user?.location?.longitude || 77.5946,
-              latitudeDelta: 0.0922,
-              longitudeDelta: 0.0421,
-            }}
-          >
-            {categoryFilteredBikes.map(bike => (
-              <Marker
-                key={bike.id}
-                coordinate={{
-                  latitude: bike.location.latitude,
-                  longitude: bike.location.longitude,
-                }}
-                title={bike.model}
-                description={`₹${bike.pricePerHour}/hour`}
-                pinColor={bike.available ? Colors.light.tertiary : Colors.light.danger}
-                onPress={() => handleBikePress(bike)}
-              />
-            ))}
-          </MapView>
-        </View>
+        <FlatList
+          data={filteredBikes}
+          renderItem={renderBikeItem}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.listContentContainer}
+          numColumns={2} 
+          columnWrapperStyle={styles.row}
+          refreshControl={
+            <RefreshControl refreshing={isLoading} onRefresh={onRefresh} colors={[Colors.light.primary || '#000']} />
+          }
+        />
       )}
     </View>
   );
@@ -161,121 +130,76 @@ export default function ExploreScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: Colors.light.background || '#fff', 
+  },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
   },
   header: {
-    paddingHorizontal: 16,
-    paddingTop: 60,
-    paddingBottom: 16,
-    backgroundColor: 'white',
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: 4,
-  },
-  locationContainer: {
+    paddingHorizontal: 15,
+    paddingTop: Platform.OS === 'android' ? 25 : 15, 
+    paddingBottom: 10,
+    backgroundColor: Colors.light.cardBackground || '#f8f8f8', 
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.light.divider || '#eee', 
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
   },
-  locationText: {
-    fontSize: 14,
-    color: Colors.light.grey3,
-    marginLeft: 4,
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: Colors.light.tint || '#007AFF', 
   },
   searchContainer: {
     flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-    backgroundColor: 'white',
-  },
-  searchBar: {
-    flex: 1,
-    flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.light.divider,
+    backgroundColor: Colors.light.cardBackground || '#f8f8f8',
     borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginRight: 12,
+    margin: 10,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: Colors.light.divider || '#eee',
+  },
+  searchIcon: {
+    marginRight: 8,
   },
   searchInput: {
     flex: 1,
-    marginLeft: 8,
+    height: 45,
     fontSize: 16,
-    color: Colors.light.text,
+    color: Colors.light.text || '#000', 
   },
-  filterButton: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: Colors.light.divider,
-    borderRadius: 8,
+  listContentContainer: {
+    paddingHorizontal: 5, 
+    paddingBottom: 20,
   },
-  viewModeContainer: {
-    flexDirection: 'row',
-    backgroundColor: 'white',
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-  },
-  viewModeButton: {
+  row: {
     flex: 1,
-    paddingVertical: 8,
-    alignItems: 'center',
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
+    justifyContent: "space-around",
   },
-  viewModeButtonActive: {
-    borderBottomColor: Colors.light.primary,
+  infoText: {
+    textAlign: 'center',
+    color: Colors.light.textMuted || '#777', 
+    marginTop: 10,
   },
-  viewModeText: {
+  errorText: {
+    textAlign: 'center',
+    color: 'red',
+    margin: 10,
+  },
+  noBikesText: {
     fontSize: 16,
-    fontWeight: '500',
-    color: Colors.light.grey3,
-  },
-  viewModeTextActive: {
-    color: Colors.light.primary,
-  },
-  categoriesContainer: {
-    backgroundColor: 'white',
-    paddingBottom: 16,
-    marginBottom: 8,
-  },
-  categoriesList: {
-    paddingHorizontal: 16,
-  },
-  categoryItem: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#F0F0F0',
-    marginRight: 8,
-  },
-  categoryItemSelected: {
-    backgroundColor: Colors.light.primary,
-  },
-  categoryText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: Colors.light.grey2,
-  },
-  categoryTextSelected: {
-    color: 'white',
-  },
-  bikesList: {
-    padding: 8,
-  },
-  bikeColumns: {
-    justifyContent: 'space-between',
-  },
-  mapContainer: {
-    flex: 1,
-    overflow: 'hidden',
-  },
-  map: {
-    width: '100%',
-    height: '100%',
-  },
+    color: Colors.light.textMuted || '#777',
+    textAlign: 'center',
+  }
 });
+
+const Button = ({ title, onPress }: { title: string, onPress: () => void }) => (
+  <TouchableOpacity onPress={onPress} style={{ marginTop: 10, padding: 10, backgroundColor: Colors.light.primary || '#007AFF', borderRadius: 5 }}>
+    <Text style={{ color: 'white', textAlign: 'center' }}>{title}</Text>
+  </TouchableOpacity>
+);

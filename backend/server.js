@@ -16,9 +16,8 @@ dotenv.config();
 const authRoutes = require('./routes/auth.routes');
 const userRoutes = require('./routes/user.routes');
 const bikeRoutes = require('./routes/bike.routes');
+const paymentRoutes = require('./routes/payment.routes'); 
 const bookingRoutes = require('./routes/booking.routes');
-const documentRoutes = require('./routes/document.routes');
-const paymentRoutes = require('./routes/payment.routes');
 const roleRoutes = require('./routes/role.routes');
 const documentRoutes = require('./routes/document.routes');
 
@@ -31,6 +30,7 @@ const limiter = rateLimit({
   max: 100, // Limit each IP to 100 requests per window
   standardHeaders: true,
   legacyHeaders: false,
+  message: 'Too many requests from this IP, please try again after 15 minutes'
 });
 
 // Middleware
@@ -42,7 +42,7 @@ app.use(mongoSanitize()); // Prevent MongoDB injection
 app.use(hpp()); // Prevent HTTP Parameter Pollution
 app.use(xss()); // Prevent XSS attacks
 app.use(limiter);
-
+app.use('/api/payments', paymentRoutes);
 // Database connection with retry logic
 const connectWithRetry = () => {
   mongoose
@@ -72,6 +72,7 @@ app.use('/api/documents', documentRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/roles', roleRoutes);
 app.use('/api/documents', documentRoutes);
+app.use('/api', limiter);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
