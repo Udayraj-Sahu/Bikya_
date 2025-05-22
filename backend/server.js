@@ -20,6 +20,7 @@ const bookingRoutes = require('./routes/booking.routes');
 const documentRoutes = require('./routes/document.routes');
 const paymentRoutes = require('./routes/payment.routes');
 const roleRoutes = require('./routes/role.routes');
+const documentRoutes = require('./routes/document.routes');
 
 // Create Express app
 const app = express();
@@ -70,6 +71,7 @@ app.use('/api/bookings', bookingRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/roles', roleRoutes);
+app.use('/api/documents', documentRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

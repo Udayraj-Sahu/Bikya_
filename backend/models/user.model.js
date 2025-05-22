@@ -25,7 +25,7 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Password is required'],
       minlength: 6,
-      select: false,
+      select: false, // Good for not sending it by default
     },
     role: {
       type: String,
@@ -36,6 +36,7 @@ const userSchema = new mongoose.Schema(
       type: {
         type: String,
         default: 'Point',
+        enum: ['Point']
       },
       coordinates: {
         type: [Number], // [longitude, latitude]
@@ -58,9 +59,25 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+    // New/Updated fields:
+    walletBalance: {
+      type: Number,
+      default: 0,
+    },
+    idProofSubmitted: { // Tracks if a user has submitted any document
+      type: Boolean,
+      default: false,
+    },
+    idProofApproved: { // Tracks if the submitted ID is approved by an owner
+      type: Boolean,
+      default: false,
+    }
   },
   {
     timestamps: true,
+    // Ensure virtuals are included when converting to JSON/Object if you plan to send them to frontend
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true }
   }
 );
 
@@ -70,7 +87,6 @@ userSchema.index({ location: '2dsphere' });
 // Hash password before saving
 userSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();
-  
   try {
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
@@ -82,15 +98,20 @@ userSchema.pre('save', async function (next) {
 
 // Method to compare password
 userSchema.methods.comparePassword = async function (candidatePassword) {
+  // Ensure 'this.password' is available. If select: false is causing issues here for login,
+  // you might need to explicitly select it in the query: User.findOne({email}).select('+password')
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
 // Virtual property to check if user's documents are verified
-userSchema.virtual('isVerified').get(function () {
-  if (this.role === 'admin' || this.role === 'owner') return true;
-  
-  return this.documents.some((doc) => doc.status === 'approved');
+// This virtual is still useful for a quick check if you have populated documents.
+// However, the idProofApproved field provides a more direct status.
+userSchema.virtual('isDocumentVerified').get(function () {
+  if (!this.documents || this.documents.length === 0) return false;
+  // Check if there's at least one approved document of a required type
+  return this.documents.some(doc => doc.status === 'approved');
 });
+
 
 const User = mongoose.model('User', userSchema);
 

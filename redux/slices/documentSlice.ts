@@ -1,91 +1,86 @@
+// frontend/redux/slices/documentSlice.ts
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import { Document } from '@/types';
 import * as documentService from '@/services/documentService';
+import { Document as DocumentType } from '@/types'; // Your Document type
+import { fetchUserProfile } from './authSlice'; // To refresh user profile after document status change
 
 interface DocumentState {
-  documents: Document[];
-  pendingDocuments: Document[];
-  userDocuments: Document[];
+  userDocuments: DocumentType[];
+  pendingDocuments: DocumentType[]; // For owner
   isLoading: boolean;
+  isUploading: boolean;
   error: string | null;
 }
 
 const initialState: DocumentState = {
-  documents: [],
-  pendingDocuments: [],
   userDocuments: [],
+  pendingDocuments: [],
   isLoading: false,
+  isUploading: false,
   error: null,
 };
 
-export const fetchAllDocuments = createAsyncThunk(
-  'documents/fetchAllDocuments',
-  async (_, { rejectWithValue }) => {
+// Thunk for user to upload their document(s)
+export const uploadUserDocumentThunk = createAsyncThunk(
+  'documents/uploadUserDocument',
+  async (formData: FormData, { rejectWithValue, dispatch }) => {
     try {
-      const documents = await documentService.getAllDocuments();
-      return documents;
-    } catch (error) {
-      return rejectWithValue(error instanceof Error ? error.message : 'Failed to fetch documents');
+      const response = await documentService.uploadDocument(formData);
+      // After successful upload, refresh the user's documents list
+      dispatch(fetchUserDocumentsThunk());
+      // Also refresh user profile to get updated idProofSubmitted status
+      dispatch(fetchUserProfile());
+      return response.documents; // Or response.message, depending on what you want to use
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.message || error.message || 'Document upload failed');
     }
   }
 );
 
-export const fetchPendingDocuments = createAsyncThunk(
+// Thunk for user to fetch their own documents
+export const fetchUserDocumentsThunk = createAsyncThunk(
+  'documents/fetchUserDocuments',
+  async (_, { rejectWithValue }) => {
+    try {
+      const documents = await documentService.getUserDocuments();
+      return documents;
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch user documents');
+    }
+  }
+);
+
+// Thunk for owner to fetch pending documents
+export const fetchPendingDocumentsThunk = createAsyncThunk(
   'documents/fetchPendingDocuments',
   async (_, { rejectWithValue }) => {
     try {
       const documents = await documentService.getPendingDocuments();
       return documents;
-    } catch (error) {
-      return rejectWithValue(error instanceof Error ? error.message : 'Failed to fetch pending documents');
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch pending documents');
     }
   }
 );
 
-export const fetchUserDocuments = createAsyncThunk(
-  'documents/fetchUserDocuments',
-  async (userId: string, { rejectWithValue }) => {
+// Thunk for owner to update a document's status
+export const updateDocumentStatusThunk = createAsyncThunk(
+  'documents/updateDocumentStatus',
+  async ({ documentId, status }: { documentId: string; status: 'approved' | 'rejected' }, { rejectWithValue, dispatch }) => {
     try {
-      const documents = await documentService.getUserDocuments(userId);
-      return documents;
-    } catch (error) {
-      return rejectWithValue(error instanceof Error ? error.message : 'Failed to fetch user documents');
-    }
-  }
-);
-
-export const uploadDocument = createAsyncThunk(
-  'documents/uploadDocument',
-  async (document: Omit<Document, 'id' | 'createdAt' | 'status'>, { rejectWithValue }) => {
-    try {
-      const newDocument = await documentService.uploadDocument(document);
-      return newDocument;
-    } catch (error) {
-      return rejectWithValue(error instanceof Error ? error.message : 'Failed to upload document');
-    }
-  }
-);
-
-export const approveDocument = createAsyncThunk(
-  'documents/approveDocument',
-  async (id: string, { rejectWithValue }) => {
-    try {
-      const updatedDocument = await documentService.approveDocument(id);
+      const updatedDocument = await documentService.updateDocumentStatus(documentId, status);
+      // Refresh the list of pending documents for the owner
+      dispatch(fetchPendingDocumentsThunk());
+      // Also refresh the specific user's profile in authSlice if their document status changed
+      // This is a bit indirect; ideally, the backend might return the updated user or you fetch it.
+      // For now, the owner UI will see the list update. The user will see it on next profile fetch.
+      // Or, if you know the user ID from updatedDocument.user, you could dispatch fetchUserProfile(userId)
+      // For simplicity, we'll rely on the owner's list refreshing.
+      // To update the user's `idProofApproved` status visible to them, `fetchUserProfile` should be called for that user.
+      // This can be triggered on the user's profile screen or after they get a notification.
       return updatedDocument;
-    } catch (error) {
-      return rejectWithValue(error instanceof Error ? error.message : 'Failed to approve document');
-    }
-  }
-);
-
-export const rejectDocument = createAsyncThunk(
-  'documents/rejectDocument',
-  async (id: string, { rejectWithValue }) => {
-    try {
-      const updatedDocument = await documentService.rejectDocument(id);
-      return updatedDocument;
-    } catch (error) {
-      return rejectWithValue(error instanceof Error ? error.message : 'Failed to reject document');
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to update document status');
     }
   }
 );
@@ -94,89 +89,76 @@ const documentSlice = createSlice({
   name: 'documents',
   initialState,
   reducers: {
-    clearErrors: (state) => {
+    clearDocumentError: (state) => {
       state.error = null;
-    },
+    }
   },
   extraReducers: (builder) => {
-    // Fetch all documents
-    builder.addCase(fetchAllDocuments.pending, (state) => {
-      state.isLoading = true;
-      state.error = null;
-    });
-    builder.addCase(fetchAllDocuments.fulfilled, (state, action) => {
-      state.isLoading = false;
-      state.documents = action.payload;
-    });
-    builder.addCase(fetchAllDocuments.rejected, (state, action) => {
-      state.isLoading = false;
-      state.error = action.payload as string;
-    });
+    // Upload User Document
+    builder
+      .addCase(uploadUserDocumentThunk.pending, (state) => {
+        state.isUploading = true;
+        state.error = null;
+      })
+      .addCase(uploadUserDocumentThunk.fulfilled, (state, action) => {
+        state.isUploading = false;
+        // Optionally add to userDocuments list if backend returns them and you want to update immediately
+        // state.userDocuments = action.payload; // Or merge
+        // For now, relying on fetchUserDocumentsThunk to refresh
+      })
+      .addCase(uploadUserDocumentThunk.rejected, (state, action) => {
+        state.isUploading = false;
+        state.error = action.payload as string;
+      });
 
-    // Fetch pending documents
-    builder.addCase(fetchPendingDocuments.pending, (state) => {
-      state.isLoading = true;
-      state.error = null;
-    });
-    builder.addCase(fetchPendingDocuments.fulfilled, (state, action) => {
-      state.isLoading = false;
-      state.pendingDocuments = action.payload;
-    });
-    builder.addCase(fetchPendingDocuments.rejected, (state, action) => {
-      state.isLoading = false;
-      state.error = action.payload as string;
-    });
+    // Fetch User Documents
+    builder
+      .addCase(fetchUserDocumentsThunk.pending, (state) => {
+        state.isLoading = true;
+        state.error = null;
+      })
+      .addCase(fetchUserDocumentsThunk.fulfilled, (state, action: PayloadAction<DocumentType[]>) => {
+        state.isLoading = false;
+        state.userDocuments = action.payload;
+      })
+      .addCase(fetchUserDocumentsThunk.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload as string;
+      });
 
-    // Fetch user documents
-    builder.addCase(fetchUserDocuments.pending, (state) => {
-      state.isLoading = true;
-      state.error = null;
-    });
-    builder.addCase(fetchUserDocuments.fulfilled, (state, action) => {
-      state.isLoading = false;
-      state.userDocuments = action.payload;
-    });
-    builder.addCase(fetchUserDocuments.rejected, (state, action) => {
-      state.isLoading = false;
-      state.error = action.payload as string;
-    });
+    // Fetch Pending Documents (Owner)
+    builder
+      .addCase(fetchPendingDocumentsThunk.pending, (state) => {
+        state.isLoading = true;
+        state.error = null;
+      })
+      .addCase(fetchPendingDocumentsThunk.fulfilled, (state, action: PayloadAction<DocumentType[]>) => {
+        state.isLoading = false;
+        state.pendingDocuments = action.payload;
+      })
+      .addCase(fetchPendingDocumentsThunk.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload as string;
+      });
 
-    // Upload document
-    builder.addCase(uploadDocument.fulfilled, (state, action) => {
-      state.userDocuments.push(action.payload);
-    });
-
-    // Approve document
-    builder.addCase(approveDocument.fulfilled, (state, action) => {
-      const index = state.pendingDocuments.findIndex(doc => doc.id === action.payload.id);
-      if (index !== -1) {
-        state.pendingDocuments.splice(index, 1);
-      }
-      
-      const docIndex = state.documents.findIndex(doc => doc.id === action.payload.id);
-      if (docIndex !== -1) {
-        state.documents[docIndex] = action.payload;
-      } else {
-        state.documents.push(action.payload);
-      }
-    });
-
-    // Reject document
-    builder.addCase(rejectDocument.fulfilled, (state, action) => {
-      const index = state.pendingDocuments.findIndex(doc => doc.id === action.payload.id);
-      if (index !== -1) {
-        state.pendingDocuments.splice(index, 1);
-      }
-      
-      const docIndex = state.documents.findIndex(doc => doc.id === action.payload.id);
-      if (docIndex !== -1) {
-        state.documents[docIndex] = action.payload;
-      } else {
-        state.documents.push(action.payload);
-      }
-    });
+    // Update Document Status (Owner)
+    builder
+      .addCase(updateDocumentStatusThunk.pending, (state) => {
+        state.isLoading = true; // Or a specific loading flag like isUpdatingStatus
+        state.error = null;
+      })
+      .addCase(updateDocumentStatusThunk.fulfilled, (state, action: PayloadAction<DocumentType>) => {
+        state.isLoading = false;
+        // The list of pending documents is refreshed by the thunk dispatching fetchPendingDocumentsThunk
+        // You could also manually update the specific document in the pendingDocuments list here if needed:
+        // state.pendingDocuments = state.pendingDocuments.filter(doc => doc.id !== action.payload.id);
+      })
+      .addCase(updateDocumentStatusThunk.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload as string;
+      });
   },
 });
 
-export const { clearErrors } = documentSlice.actions;
+export const { clearDocumentError } = documentSlice.actions;
 export default documentSlice.reducer;

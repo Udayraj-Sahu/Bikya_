@@ -1,113 +1,80 @@
-import { Document } from '@/types';
+// frontend/services/documentService.ts
+import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Document as DocumentType, DocumentApprovalStatus } from '@/types'; // Assuming Document type is defined in types
 
-// Mock data
-const mockDocuments: Document[] = [
-  {
-    id: '1',
-    userId: '1',
-    uri: 'https://images.pexels.com/photos/3585089/pexels-photo-3585089.jpeg',
-    type: 'idCard',
-    side: 'front',
-    status: 'pending',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: '2',
-    userId: '1',
-    uri: 'https://images.pexels.com/photos/3585088/pexels-photo-3585088.jpeg',
-    type: 'idCard',
-    side: 'back',
-    status: 'pending',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: '3',
-    userId: '4',
-    uri: 'https://images.pexels.com/photos/3791136/pexels-photo-3791136.jpeg',
-    type: 'drivingLicense',
-    side: 'front',
-    status: 'approved',
-    createdAt: new Date(Date.now() - 864000000).toISOString(), // 10 days ago
-  },
-];
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000/api'; // Ensure this is correct
 
-// Get all documents
-export const getAllDocuments = async (): Promise<Document[]> => {
-  // Simulate API call
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve(mockDocuments);
-    }, 500);
-  });
+// Helper to get the token
+const getToken = async () => {
+  return await AsyncStorage.getItem('token');
 };
 
-// Get pending documents
-export const getPendingDocuments = async (): Promise<Document[]> => {
-  // Simulate API call
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      const pendingDocs = mockDocuments.filter(doc => doc.status === 'pending');
-      resolve(pendingDocs);
-    }, 500);
+interface UploadDocumentResponse {
+  message: string;
+  documents: DocumentType[]; // Or a single DocumentType if only one is created per call
+}
+
+// Function to upload document(s)
+export const uploadDocument = async (formData: FormData): Promise<UploadDocumentResponse> => {
+  const token = await getToken();
+  if (!token) throw new Error('No token found for document upload');
+
+  // FormData will be sent as multipart/form-data, Axios handles the Content-Type
+  const response = await axios.post(`${API_BASE_URL}/documents`, formData, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      // 'Content-Type': 'multipart/form-data', // Axios usually sets this automatically for FormData
+    },
   });
+  return response.data; // Assuming backend returns { status: 'success', message: '...', data: { documents: [...] } }
+                        // Adjust to: return response.data.data
 };
 
-// Get documents by user ID
-export const getUserDocuments = async (userId: string): Promise<Document[]> => {
-  // Simulate API call
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      const userDocs = mockDocuments.filter(doc => doc.userId === userId);
-      resolve(userDocs);
-    }, 500);
+// Function to get the current user's documents
+export const getUserDocuments = async (): Promise<DocumentType[]> => {
+  const token = await getToken();
+  if (!token) throw new Error('No token found for fetching documents');
+
+  const response = await axios.get<{ data: { documents: DocumentType[] } }>(`${API_BASE_URL}/documents/me`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
   });
+  return response.data.data.documents; // Assuming backend returns { status: 'success', results: ..., data: { documents: [...] } }
 };
 
-// Upload document
-export const uploadDocument = async (document: Omit<Document, 'id' | 'createdAt' | 'status'>): Promise<Document> => {
-  // Simulate API call
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      const newDocument: Document = {
-        ...document,
-        id: (mockDocuments.length + 1).toString(),
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-      };
-      mockDocuments.push(newDocument);
-      resolve(newDocument);
-    }, 1000); // Longer timeout to simulate image upload
-  });
+
+// --- Functions for Owner ---
+interface PendingDocument extends DocumentType {
+  user: { // Assuming user details are populated
+    fullName: string;
+    email: string;
+    phone?: string;
+  };
+}
+
+export const getPendingDocuments = async (): Promise<PendingDocument[]> => {
+    const token = await getToken();
+    if (!token) throw new Error('No token found for fetching pending documents');
+
+    const response = await axios.get<{data: {documents: PendingDocument[]}}>(`${API_BASE_URL}/documents/pending`, {
+        headers: { Authorization: `Bearer ${token}`},
+    });
+    return response.data.data.documents;
 };
 
-// Approve document
-export const approveDocument = async (id: string): Promise<Document> => {
-  // Simulate API call
-  return new Promise((resolve, reject) => {
-    setTimeout(() => {
-      const index = mockDocuments.findIndex(doc => doc.id === id);
-      if (index !== -1) {
-        mockDocuments[index] = { ...mockDocuments[index], status: 'approved' };
-        resolve(mockDocuments[index]);
-      } else {
-        reject(new Error('Document not found'));
-      }
-    }, 500);
-  });
-};
+export const updateDocumentStatus = async (
+    documentId: string,
+    status: 'approved' | 'rejected'
+): Promise<DocumentType> => {
+    const token = await getToken();
+    if (!token) throw new Error('No token found for updating document status');
 
-// Reject document
-export const rejectDocument = async (id: string): Promise<Document> => {
-  // Simulate API call
-  return new Promise((resolve, reject) => {
-    setTimeout(() => {
-      const index = mockDocuments.findIndex(doc => doc.id === id);
-      if (index !== -1) {
-        mockDocuments[index] = { ...mockDocuments[index], status: 'rejected' };
-        resolve(mockDocuments[index]);
-      } else {
-        reject(new Error('Document not found'));
-      }
-    }, 500);
-  });
+    const response = await axios.patch<{data: {document: DocumentType}}>(
+        `${API_BASE_URL}/documents/${documentId}/status`,
+        { status },
+        { headers: { Authorization: `Bearer ${token}`}}
+    );
+    return response.data.data.document;
 };

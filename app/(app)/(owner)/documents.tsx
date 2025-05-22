@@ -1,105 +1,128 @@
-import { useEffect, useState } from 'react';
-import { StyleSheet, View, Text, FlatList, TouchableOpacity, Alert } from 'react-native';
+// app/(app)/(owner)/documents.tsx
+import React, { useEffect } from 'react';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, Alert, ScrollView, StyleProp, TextStyle } from 'react-native'; // Added StyleProp, TextStyle
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
-import { fetchPendingDocuments, approveDocument, rejectDocument } from '@/redux/slices/documentSlice';
+import { fetchPendingDocumentsThunk, updateDocumentStatusThunk, clearDocumentError } from '@/redux/slices/documentSlice';
+import { Document as DocumentType, User, DocumentApprovalStatus } from '@/types';
+import Button from '@/components/Button';
 import Colors from '@/constants/Colors';
-import { FileText, CheckCircle, XCircle } from 'lucide-react-native';
-import DocumentCard from '@/components/DocumentCard';
 
-export default function DocumentsScreen() {
+interface PendingDocumentItem extends DocumentType {
+  user?: Partial<User>; 
+}
+
+export default function OwnerDocumentsScreen() {
   const dispatch = useAppDispatch();
-  const { pendingDocuments, isLoading } = useAppSelector(state => state.documents);
-  const [refreshing, setRefreshing] = useState(false);
-  
+  const { pendingDocuments, isLoading, error } = useAppSelector((state) => state.documents);
+  const owner = useAppSelector((state) => state.auth.user); 
+
   useEffect(() => {
-    dispatch(fetchPendingDocuments());
-  }, [dispatch]);
-  
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await dispatch(fetchPendingDocuments());
-    setRefreshing(false);
-  };
-  
-  const handleApproveDocument = (id: string) => {
+    if (owner?.role === 'owner') {
+      dispatch(fetchPendingDocumentsThunk());
+    }
+    dispatch(clearDocumentError());
+  }, [dispatch, owner?.role]);
+
+  const handleUpdateStatus = (documentId: string, status: 'approved' | 'rejected') => {
     Alert.alert(
-      'Approve Document',
-      'Are you sure you want to approve this document?',
+      "Confirm Action",
+      `Are you sure you want to ${status} this document?`,
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: "Cancel", style: "cancel" },
         { 
-          text: 'Approve', 
-          onPress: () => {
-            dispatch(approveDocument(id));
-          }
-        },
+          text: "Confirm", 
+          onPress: async () => {
+            const resultAction = await dispatch(updateDocumentStatusThunk({ documentId, status }));
+            if (updateDocumentStatusThunk.fulfilled.match(resultAction)) {
+              Alert.alert('Success', `Document has been ${status}.`);
+            } else {
+              Alert.alert('Error', resultAction.payload as string || `Failed to ${status} document.`);
+            }
+          } 
+        }
       ]
     );
   };
-  
-  const handleRejectDocument = (id: string) => {
-    Alert.alert(
-      'Reject Document',
-      'Are you sure you want to reject this document?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Reject', 
-          onPress: () => {
-            dispatch(rejectDocument(id));
-          },
-          style: 'destructive'
-        },
-      ]
-    );
+
+  // Helper function to get status style
+  const getStatusStyle = (status: DocumentApprovalStatus): StyleProp<TextStyle> => {
+    if (status === 'pending') return styles.statusPending;
+    if (status === 'approved') return styles.statusApproved;
+    if (status === 'rejected') return styles.statusRejected;
+    return {}; // Default or no specific style
   };
-  
-  const renderTabBar = () => {
+
+  const renderDocumentItem = ({ item }: { item: PendingDocumentItem }) => (
+    <View style={styles.documentItem}>
+      <Text style={styles.itemTitle}>Document ID: <Text style={styles.itemValue}>{item.id}</Text></Text>
+      {item.user && (
+        <>
+          <Text style={styles.itemText}>User: <Text style={styles.itemValue}>{item.user.fullName} ({item.user.email})</Text></Text>
+        </>
+      )}
+      <Text style={styles.itemText}>Type: <Text style={styles.itemValue}>{item.documentType}</Text></Text>
+      {/* Corrected line for status style */}
+      <Text style={styles.itemText}>
+        Status: <Text style={[styles.itemValue, getStatusStyle(item.status)]}>{item.status}</Text>
+      </Text>
+      <Text style={styles.itemText}>Submitted: <Text style={styles.itemValue}>{new Date(item.createdAt).toLocaleDateString()}</Text></Text>
+      
+      {item.frontImageUri && <Text style={styles.imageLink}>Front Image: <Text style={styles.linkText} onPress={() => {/* Open image */}}>{item.frontImageUri.substring(item.frontImageUri.lastIndexOf('/') + 1)}</Text></Text>}
+      {item.backImageUri && <Text style={styles.imageLink}>Back Image: <Text style={styles.linkText} onPress={() => {/* Open image */}}>{item.backImageUri.substring(item.backImageUri.lastIndexOf('/') + 1)}</Text></Text>}
+      
+      {item.status === 'pending' && (
+        <View style={styles.actionsContainer}>
+          <Button 
+            title="Approve" 
+            onPress={() => handleUpdateStatus(item.id, 'approved')} 
+            type="secondary"
+            style={styles.actionButton}
+          />
+          <Button 
+            title="Reject" 
+            onPress={() => handleUpdateStatus(item.id, 'rejected')} 
+            type="danger" 
+            style={styles.actionButton}
+          />
+        </View>
+      )}
+    </View>
+  );
+
+  if (isLoading && pendingDocuments.length === 0) {
     return (
-      <View style={styles.tabBar}>
-        <TouchableOpacity style={[styles.tab, styles.activeTab]}>
-          <Text style={[styles.tabText, styles.activeTabText]}>Pending ({pendingDocuments.length})</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.tab}>
-          <Text style={styles.tabText}>Approved</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.tab}>
-          <Text style={styles.tabText}>Rejected</Text>
-        </TouchableOpacity>
+      <View style={[styles.container, styles.centered]}>
+        <ActivityIndicator size="large" color={Colors.light.primary} />
+        <Text>Loading pending documents...</Text>
       </View>
     );
-  };
+  }
+
+  if (error) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <Text style={styles.errorText}>Error: {error}</Text>
+        <Button title="Retry" onPress={() => dispatch(fetchPendingDocumentsThunk())} />
+      </View>
+    );
+  }
   
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Document Verification</Text>
-      </View>
-      
-      {renderTabBar()}
-      
-      {pendingDocuments.length > 0 ? (
-        <FlatList
-          data={pendingDocuments}
-          renderItem={({ item }) => (
-            <DocumentCard 
-              document={item} 
-              showActions={true}
-              onApprove={handleApproveDocument}
-              onReject={handleRejectDocument}
-            />
-          )}
-          keyExtractor={item => item.id}
-          contentContainerStyle={styles.documentsList}
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-        />
-      ) : (
-        <View style={styles.emptyContainer}>
-          <FileText size={64} color={Colors.light.grey4} style={styles.emptyIcon} />
-          <Text style={styles.emptyText}>No pending documents</Text>
-          <Text style={styles.emptySubtext}>All documents have been reviewed</Text>
+      <Text style={styles.headerTitle}>Pending Document Approvals</Text>
+      {pendingDocuments.length === 0 && !isLoading ? (
+        <View style={styles.centered}>
+            <Text style={styles.noDocumentsText}>No documents are currently pending approval.</Text>
         </View>
+      ) : (
+        <FlatList
+          data={pendingDocuments as PendingDocumentItem[]} 
+          renderItem={renderDocumentItem}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.listContentContainer}
+          refreshing={isLoading} 
+          onRefresh={() => dispatch(fetchPendingDocumentsThunk())} 
+        />
       )}
     </View>
   );
@@ -108,66 +131,94 @@ export default function DocumentsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: Colors.light.background,
   },
-  header: {
-    paddingHorizontal: 16,
-    paddingTop: 60,
-    paddingBottom: 16,
-    backgroundColor: 'white',
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: Colors.light.text,
-  },
-  tabBar: {
-    flexDirection: 'row',
-    backgroundColor: 'white',
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-    marginBottom: 8,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 8,
-    alignItems: 'center',
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
-  },
-  activeTab: {
-    borderBottomColor: Colors.light.primary,
-  },
-  tabText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: Colors.light.grey3,
-  },
-  activeTabText: {
-    color: Colors.light.primary,
-  },
-  documentsList: {
-    padding: 16,
-  },
-  emptyContainer: {
+  centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 16,
+    padding: 20,
   },
-  emptyIcon: {
-    marginBottom: 16,
-    opacity: 0.5,
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: Colors.light.tint,
+    padding: 20,
+    textAlign: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.light.divider,
   },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: Colors.light.text,
-    marginBottom: 8,
+  listContentContainer: {
+    paddingHorizontal: 10,
+    paddingBottom: 20,
   },
-  emptySubtext: {
+  documentItem: {
+    backgroundColor: 'white',
+    borderRadius: 8,
+    padding: 15,
+    marginVertical: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  itemTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 5,
+  },
+  itemText: {
     fontSize: 14,
-    color: Colors.light.grey3,
+    color: Colors.light.text,
+    marginBottom: 3,
+  },
+  itemValue: {
+    fontWeight: 'normal',
+    color: '#555',
+  },
+  // Ensure these styles are defined for status colors
+  statusPending: { 
+    color: 'orange',
+    fontWeight: 'bold',
+  },
+  statusApproved: { 
+    color: 'green',
+    fontWeight: 'bold',
+   },
+  statusRejected: { 
+    color: 'red',
+    fontWeight: 'bold',
+  },
+  imageLink: {
+    fontSize: 14,
+    marginTop: 5,
+  },
+  linkText: {
+    color: Colors.light.primary,
+    textDecorationLine: 'underline',
+  },
+  actionsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginTop: 15,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: Colors.light.divider,
+  },
+  actionButton: {
+    paddingHorizontal: 10, 
+    minHeight: 40,
+  },
+  noDocumentsText: {
+    fontSize: 16,
+    color: '#777',
     textAlign: 'center',
   },
+  errorText: {
+    fontSize: 16,
+    color: 'red',
+    textAlign: 'center',
+    marginBottom: 10,
+  }
 });

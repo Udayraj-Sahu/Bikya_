@@ -1,15 +1,17 @@
-import { StyleSheet, Text, TouchableOpacity, ActivityIndicator, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, ActivityIndicator, View, StyleProp, ViewStyle, TextStyle } from 'react-native'; // Added StyleProp, ViewStyle, TextStyle
 import React from 'react';
 import Colors from '@/constants/Colors';
 
 interface ButtonProps {
   title: string;
-  onPress: () => void;
+  onPress?: () => void;
   type?: 'primary' | 'secondary' | 'tertiary' | 'danger' | 'outline';
   disabled?: boolean;
   loading?: boolean;
   fullWidth?: boolean;
   icon?: React.ReactNode;
+  style?: StyleProp<ViewStyle>; // <<< ADDED THIS LINE for custom container styles
+  textStyle?: StyleProp<TextStyle>;
 }
 
 export default function Button({
@@ -20,6 +22,7 @@ export default function Button({
   loading = false,
   fullWidth = false,
   icon,
+  
 }: ButtonProps) {
   const getButtonStyle = () => {
     if (disabled) return styles.buttonDisabled;

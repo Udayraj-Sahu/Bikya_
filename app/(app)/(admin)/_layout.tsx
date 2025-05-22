@@ -1,50 +1,51 @@
+// app/(app)/(admin)/_layout.tsx
+import React from 'react';
 import { Tabs } from 'expo-router';
+import { LayoutDashboard, ListChecks, UserCircle, Bike as BikeIcon } from 'lucide-react-native'; // Example icons
 import Colors from '@/constants/Colors';
-import { LayoutDashboard, Bike, ClipboardList, User } from 'lucide-react-native';
 
-export default function AdminLayout() {
+export default function AdminTabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors.light.primary,
+        tabBarActiveTintColor: Colors.light.primary, // Or a specific admin theme color
         tabBarInactiveTintColor: Colors.light.tabIconDefault,
         tabBarStyle: {
           borderTopWidth: 1,
           borderTopColor: Colors.light.divider,
-          elevation: 0,
-          shadowOpacity: 0,
         },
-        headerShown: false,
+        headerShown: false, 
       }}
     >
       <Tabs.Screen
-        name="index"
+        name="index" // Corresponds to app/(app)/(admin)/index.tsx (Dashboard)
         options={{
           title: 'Dashboard',
           tabBarIcon: ({ color, size }) => <LayoutDashboard size={size} color={color} />,
         }}
       />
       <Tabs.Screen
-        name="inventory"
+        name="inventory" // Corresponds to app/(app)/(admin)/inventory.tsx
         options={{
-          title: 'Inventory',
-          tabBarIcon: ({ color, size }) => <Bike size={size} color={color} />,
+          title: 'Bike Inventory',
+          tabBarIcon: ({ color, size }) => <BikeIcon size={size} color={color} />,
         }}
       />
       <Tabs.Screen
-        name="bookings"
+        name="bookings" // Corresponds to app/(app)/(admin)/bookings.tsx (View all bookings)
         options={{
-          title: 'Bookings',
-          tabBarIcon: ({ color, size }) => <ClipboardList size={size} color={color} />,
+          title: 'All Bookings',
+          tabBarIcon: ({ color, size }) => <ListChecks size={size} color={color} />,
         }}
       />
-      <Tabs.Screen
-        name="profile"
+      {/* You can add a Profile tab for the Admin as well */}
+      {/* <Tabs.Screen
+        name="profile" // Create app/(app)/(admin)/profile.tsx if needed
         options={{
           title: 'Profile',
-          tabBarIcon: ({ color, size }) => <User size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <UserCircle size={size} color={color} />,
         }}
-      />
+      /> */}
     </Tabs>
   );
 }

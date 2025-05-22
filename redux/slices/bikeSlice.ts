@@ -1,82 +1,133 @@
+// frontend/redux/slices/bikeSlice.ts
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import { Bike } from '@/types';
 import * as bikeService from '@/services/bikeService';
+import { Bike } from '@/types';
+// Assuming RootState and AppDispatch are correctly typed and exported from your store file
+import { RootState, AppDispatch } from '../store'; // Adjust path if store.ts is elsewhere
+
+type LocationParamsType = { latitude: number; longitude: number; maxDistance?: number };
 
 interface BikeState {
-  bikes: Bike[];
-  featuredBikes: Bike[];
+  bikes: Bike[]; 
+  allBikesAdmin: Bike[]; 
   selectedBike: Bike | null;
   isLoading: boolean;
-  error: string | null;
+  isMutating: boolean; 
+  error: string | null; 
 }
 
 const initialState: BikeState = {
   bikes: [],
-  featuredBikes: [],
+  allBikesAdmin: [],
   selectedBike: null,
   isLoading: false,
+  isMutating: false,
   error: null,
 };
 
-export const fetchBikes = createAsyncThunk(
-  'bikes/fetchBikes',
-  async (_, { rejectWithValue }) => {
+// --- Thunks for User ---
+export const fetchAvailableBikesThunk = createAsyncThunk<
+  Bike[], 
+  LocationParamsType | undefined, 
+  { rejectValue: string } 
+>(
+  'bikes/fetchAvailable',
+  async (locationParams, { rejectWithValue }) => { 
     try {
-      const bikes = await bikeService.getBikes();
+      const bikes = await bikeService.getAllAvailableBikes(locationParams);
       return bikes;
-    } catch (error) {
-      return rejectWithValue(error instanceof Error ? error.message : 'Failed to fetch bikes');
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch available bikes');
     }
   }
 );
 
-export const fetchBikesByLocation = createAsyncThunk(
-  'bikes/fetchBikesByLocation',
-  async ({ latitude, longitude }: { latitude: number; longitude: number }, { rejectWithValue }) => {
+export const fetchBikeDetailsThunk = createAsyncThunk<
+  Bike, 
+  string, 
+  { rejectValue: string } 
+>(
+  'bikes/fetchDetails',
+  async (bikeId, { rejectWithValue }) => {
     try {
-      const bikes = await bikeService.getBikesByLocation(latitude, longitude);
-      return bikes;
-    } catch (error) {
-      return rejectWithValue(error instanceof Error ? error.message : 'Failed to fetch bikes by location');
+      const bike = await bikeService.getBikeDetails(bikeId);
+      return bike;
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch bike details');
     }
   }
 );
 
-export const addBike = createAsyncThunk(
+// --- Thunks for Admin ---
+export const fetchAllBikesForAdminThunk = createAsyncThunk<
+  Bike[], 
+  void, 
+  { rejectValue: string } 
+>(
+  'bikes/fetchAllForAdmin',
+  async (_, { rejectWithValue }) => { 
+    try {
+      const bikes = await bikeService.getAllBikesForAdmin();
+      return bikes;
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to fetch all bikes for admin');
+    }
+  }
+);
+
+type AddBikePayload = Omit<Bike, 'id' | 'createdBy' | 'createdAt'>;
+export const addBikeThunk = createAsyncThunk<
+  Bike, 
+  AddBikePayload, 
+  { rejectValue: string; dispatch: AppDispatch } 
+>(
   'bikes/addBike',
-  async (bike: Omit<Bike, 'id' | 'createdAt'>, { rejectWithValue }) => {
+  async (bikeData, { rejectWithValue, dispatch }) => {
     try {
-      const newBike = await bikeService.addBike(bike);
+      const newBike = await bikeService.addBike(bikeData);
+      dispatch(fetchAllBikesForAdminThunk()); 
       return newBike;
-    } catch (error) {
-      return rejectWithValue(error instanceof Error ? error.message : 'Failed to add bike');
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to add bike');
     }
   }
 );
 
-export const updateBike = createAsyncThunk(
+type UpdateBikePayload = { bikeId: string; bikeData: Partial<Omit<Bike, 'id' | 'createdBy' | 'createdAt'>> };
+export const updateBikeThunk = createAsyncThunk<
+  Bike, 
+  UpdateBikePayload, 
+  { rejectValue: string; dispatch: AppDispatch; getState: () => RootState } 
+>(
   'bikes/updateBike',
-  async ({ id, bike }: { id: string; bike: Partial<Bike> }, { rejectWithValue }) => {
+  async ({ bikeId, bikeData }, { rejectWithValue, dispatch, getState }) => {
     try {
-      const updatedBike = await bikeService.updateBike(id, bike);
+      const updatedBike = await bikeService.updateBike(bikeId, bikeData);
+      dispatch(fetchAllBikesForAdminThunk()); 
       return updatedBike;
-    } catch (error) {
-      return rejectWithValue(error instanceof Error ? error.message : 'Failed to update bike');
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to update bike');
     }
   }
 );
 
-export const deleteBike = createAsyncThunk(
+export const deleteBikeThunk = createAsyncThunk<
+  string, 
+  string, 
+  { rejectValue: string; dispatch: AppDispatch } 
+>(
   'bikes/deleteBike',
-  async (id: string, { rejectWithValue }) => {
+  async (bikeId, { rejectWithValue, dispatch }) => {
     try {
-      await bikeService.deleteBike(id);
-      return id;
-    } catch (error) {
-      return rejectWithValue(error instanceof Error ? error.message : 'Failed to delete bike');
+      await bikeService.deleteBike(bikeId);
+      dispatch(fetchAllBikesForAdminThunk()); 
+      return bikeId; 
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.message || error.message || 'Failed to delete bike');
     }
   }
 );
+
 
 const bikeSlice = createSlice({
   name: 'bikes',
@@ -85,61 +136,91 @@ const bikeSlice = createSlice({
     setSelectedBike: (state, action: PayloadAction<Bike | null>) => {
       state.selectedBike = action.payload;
     },
-    clearErrors: (state) => {
+    clearBikeError: (state) => {
       state.error = null;
-    },
+    }
   },
   extraReducers: (builder) => {
-    // Fetch all bikes
-    builder.addCase(fetchBikes.pending, (state) => {
-      state.isLoading = true;
-      state.error = null;
-    });
-    builder.addCase(fetchBikes.fulfilled, (state, action) => {
-      state.isLoading = false;
-      state.bikes = action.payload;
-      // Set featured bikes (for example, first 5 bikes)
-      state.featuredBikes = action.payload.slice(0, 5);
-    });
-    builder.addCase(fetchBikes.rejected, (state, action) => {
-      state.isLoading = false;
-      state.error = action.payload as string;
-    });
+    // Corrected: Removed WritableDraft type from state parameter here
+    const handleRejected = (state: BikeState, action: any) => { 
+        state.isLoading = false;
+        state.isMutating = false;
+        if (action.payload) { 
+            state.error = action.payload;
+        } else if (action.error && action.error.message) { 
+            state.error = action.error.message;
+        } else {
+            state.error = 'An unknown error occurred';
+        }
+    };
+    
+    // Fetch Available Bikes (User)
+    builder
+      .addCase(fetchAvailableBikesThunk.pending, (state) => {
+        state.isLoading = true; state.error = null;
+      })
+      .addCase(fetchAvailableBikesThunk.fulfilled, (state, action: PayloadAction<Bike[]>) => {
+        state.isLoading = false; state.bikes = action.payload;
+      })
+      .addCase(fetchAvailableBikesThunk.rejected, handleRejected);
 
-    // Fetch bikes by location
-    builder.addCase(fetchBikesByLocation.pending, (state) => {
-      state.isLoading = true;
-      state.error = null;
-    });
-    builder.addCase(fetchBikesByLocation.fulfilled, (state, action) => {
-      state.isLoading = false;
-      state.bikes = action.payload;
-      state.featuredBikes = action.payload.slice(0, 5);
-    });
-    builder.addCase(fetchBikesByLocation.rejected, (state, action) => {
-      state.isLoading = false;
-      state.error = action.payload as string;
-    });
+    // Fetch Bike Details (User)
+    builder
+      .addCase(fetchBikeDetailsThunk.pending, (state) => {
+        state.isLoading = true; state.error = null;
+      })
+      .addCase(fetchBikeDetailsThunk.fulfilled, (state, action: PayloadAction<Bike>) => {
+        state.isLoading = false; state.selectedBike = action.payload;
+      })
+      .addCase(fetchBikeDetailsThunk.rejected, handleRejected);
 
-    // Add bike
-    builder.addCase(addBike.fulfilled, (state, action) => {
-      state.bikes.push(action.payload);
-    });
+    // Fetch All Bikes (Admin)
+    builder
+      .addCase(fetchAllBikesForAdminThunk.pending, (state) => {
+        state.isLoading = true; state.error = null;
+      })
+      .addCase(fetchAllBikesForAdminThunk.fulfilled, (state, action: PayloadAction<Bike[]>) => {
+        state.isLoading = false; state.allBikesAdmin = action.payload;
+      })
+      .addCase(fetchAllBikesForAdminThunk.rejected, handleRejected);
 
-    // Update bike
-    builder.addCase(updateBike.fulfilled, (state, action) => {
-      const index = state.bikes.findIndex(bike => bike.id === action.payload.id);
-      if (index !== -1) {
-        state.bikes[index] = action.payload;
-      }
-    });
+    // Add Bike (Admin)
+    builder
+      .addCase(addBikeThunk.pending, (state) => {
+        state.isMutating = true; state.error = null;
+      })
+      .addCase(addBikeThunk.fulfilled, (state, action: PayloadAction<Bike>) => {
+        state.isMutating = false;
+      })
+      .addCase(addBikeThunk.rejected, handleRejected);
 
-    // Delete bike
-    builder.addCase(deleteBike.fulfilled, (state, action) => {
-      state.bikes = state.bikes.filter(bike => bike.id !== action.payload);
-    });
+    // Update Bike (Admin)
+    builder
+      .addCase(updateBikeThunk.pending, (state) => {
+        state.isMutating = true; state.error = null;
+      })
+      .addCase(updateBikeThunk.fulfilled, (state, action: PayloadAction<Bike>) => {
+        state.isMutating = false;
+        if (state.selectedBike?.id === action.payload.id) {
+            state.selectedBike = action.payload; 
+        }
+      })
+      .addCase(updateBikeThunk.rejected, handleRejected);
+
+    // Delete Bike (Admin)
+    builder
+      .addCase(deleteBikeThunk.pending, (state) => {
+        state.isMutating = true; state.error = null;
+      })
+      .addCase(deleteBikeThunk.fulfilled, (state, action: PayloadAction<string>) => {
+        state.isMutating = false;
+        if (state.selectedBike?.id === action.payload) {
+            state.selectedBike = null; 
+        }
+      })
+      .addCase(deleteBikeThunk.rejected, handleRejected);
   },
 });
 
-export const { setSelectedBike, clearErrors } = bikeSlice.actions;
+export const { setSelectedBike, clearBikeError } = bikeSlice.actions;
 export default bikeSlice.reducer;

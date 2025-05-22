@@ -1,452 +1,276 @@
+// app/(app)/(user)/profile.tsx
 import Button from "@/components/Button";
-import DocumentCard from "@/components/DocumentCard";
-import UserProfileHeader from "@/components/UserProfileHeader";
+import Input from "@/components/Input";
 import Colors from "@/constants/Colors";
-import { useImagePicker } from "@/hooks/useImagePicker";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
-import { logout } from "@/redux/slices/authSlice";
 import {
-	fetchUserDocuments,
-	uploadDocument,
-} from "@/redux/slices/documentSlice";
-import { router } from "expo-router";
+	fetchUserProfile,
+	logout,
+	updateProfile,
+} from "@/redux/slices/authSlice";
+import { fetchUserDocumentsThunk } from "@/redux/slices/documentSlice"; // Import this
+import { User } from "@/types";
+import { Link, router } from "expo-router"; // Import Link
+import React, {
+	useEffect,
+	useState, // ... other imports
+} from "react";
 import {
-	AlertTriangle,
-	FileText,
-	IdCard,
-	LogOut,
-	Upload,
-} from "lucide-react-native";
-import { useEffect, useState } from "react";
-import {
+	ActivityIndicator,
 	Alert,
-	Platform,
 	ScrollView,
 	StyleSheet,
 	Text,
-	TouchableOpacity,
 	View,
 } from "react-native";
 
 export default function ProfileScreen() {
 	const dispatch = useAppDispatch();
-	const { user, documentStatus } = useAppSelector((state) => state.auth);
-	const { userDocuments, isLoading } = useAppSelector(
+	const {
+		user,
+		isLoading: authLoading,
+		error: authError,
+	} = useAppSelector((state) => state.auth);
+	// Get document status from user object, or from documentSlice if you prefer more detail
+	const { userDocuments, isLoading: docsLoading } = useAppSelector(
 		(state) => state.documents
 	);
-	const imagePicker = useImagePicker();
 
-	const [uploadType, setUploadType] = useState<
-		"idCard" | "drivingLicense" | null
-	>(null);
-	const [uploadSide, setUploadSide] = useState<"front" | "back" | null>(null);
+	const [fullName, setFullName] = useState(user?.fullName || "");
+	const [phone, setPhone] = useState(user?.phone || "");
 
 	useEffect(() => {
-		if (user?.id) {
-			dispatch(fetchUserDocuments(user.id));
+		if (!user) {
+			dispatch(fetchUserProfile());
+		} else {
+			setFullName(user.fullName || "");
+			setPhone(user.phone || "");
 		}
+		// Fetch user's documents to display status or list
+		dispatch(fetchUserDocumentsThunk());
 	}, [dispatch, user]);
+
+	useEffect(() => {
+		if (user) {
+			setFullName(user.fullName || "");
+			setPhone(user.phone || "");
+		}
+	}, [user]);
+
+	const handleUpdateProfile = async () => {
+		const profileData: Partial<User> = {};
+		if (fullName !== user?.fullName) profileData.fullName = fullName;
+		if (phone !== user?.phone) profileData.phone = phone;
+
+		if (Object.keys(profileData).length > 0) {
+			const resultAction = await dispatch(updateProfile(profileData));
+			if (updateProfile.fulfilled.match(resultAction)) {
+				Alert.alert("Success", "Profile updated successfully!");
+			} else {
+				Alert.alert(
+					"Error",
+					resultAction.payload || "Failed to update profile."
+				);
+			}
+		} else {
+			Alert.alert("Info", "No changes to update.");
+		}
+	};
 
 	const handleLogout = () => {
 		dispatch(logout());
-		router.replace("/");
+		router.replace("/(auth)/login");
 	};
 
-	const openImagePicker = async (
-		type: "idCard" | "drivingLicense",
-		side: "front" | "back"
-	) => {
-		setUploadType(type);
-		setUploadSide(side);
-		await imagePicker.pickImage();
-	};
-
-	useEffect(() => {
-		const shouldUpload =
-			imagePicker.uri && uploadType && uploadSide && user?.id;
-
-		if (!shouldUpload) return;
-
-		dispatch(
-			uploadDocument({
-				userId: user.id,
-				uri: imagePicker.uri!,
-				type: uploadType,
-				side: uploadSide,
-			})
-		);
-
-		imagePicker.resetImage();
-		setUploadType(null);
-		setUploadSide(null);
-
-		Alert.alert(
-			"Document Uploaded",
-			"Your document has been submitted for verification. You will be notified once it's approved.",
-			[{ text: "OK" }]
-		);
-
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [imagePicker.uri, uploadType, uploadSide, user?.id]);
-
-	const getDocumentStatus = () => {
-		if (!documentStatus) return null;
-
-		let color, text, icon;
-		switch (documentStatus) {
-			case "approved":
-				color = Colors.light.tertiary;
-				text = "Your documents have been approved";
-				icon = <FileText size={20} color={Colors.light.tertiary} />;
-				break;
-			case "pending":
-				color = Colors.light.warning;
-				text = "Your documents are pending approval";
-				icon = <AlertTriangle size={20} color={Colors.light.warning} />;
-				break;
-			case "rejected":
-				color = Colors.light.danger;
-				text = "Your documents were rejected. Please upload new ones.";
-				icon = <AlertTriangle size={20} color={Colors.light.danger} />;
-				break;
-			default:
-				return null;
+	const getOverallDocumentStatus = () => {
+		if (user?.idProofApproved)
+			return <Text style={{ color: "green" }}>Approved</Text>;
+		if (user?.idProofSubmitted) {
+			// Submitted but not yet approved
+			const pendingDoc = userDocuments.find(
+				(doc) => doc.status === "pending"
+			);
+			if (pendingDoc)
+				return (
+					<Text style={{ color: "orange" }}>Pending Approval</Text>
+				);
+			const rejectedDoc = userDocuments.find(
+				(doc) => doc.status === "rejected"
+			);
+			if (rejectedDoc)
+				return (
+					<Text style={{ color: "red" }}>
+						Rejected (Please re-upload)
+					</Text>
+				);
+			return <Text style={{ color: "orange" }}>Processing</Text>; // Fallback if submitted but no specific status found
 		}
+		return <Text style={{ color: "red" }}>Not Submitted</Text>;
+	};
 
+	if (authLoading && !user) {
 		return (
-			<View
-				style={[
-					styles.statusBanner,
-					{ backgroundColor: `${color}15` },
-				]}>
-				{icon}
-				<Text style={[styles.statusText, { color }]}>{text}</Text>
+			<View style={styles.container}>
+				<ActivityIndicator size="large" color={Colors.light.tint} />
 			</View>
 		);
-	};
+	}
 
-	const hasUploadedFrontId = userDocuments.some(
-		(doc) => doc.type === "idCard" && doc.side === "front"
-	);
-	const hasUploadedBackId = userDocuments.some(
-		(doc) => doc.type === "idCard" && doc.side === "back"
-	);
-	const hasUploadedFrontLicense = userDocuments.some(
-		(doc) => doc.type === "drivingLicense" && doc.side === "front"
-	);
-	const hasUploadedBackLicense = userDocuments.some(
-		(doc) => doc.type === "drivingLicense" && doc.side === "back"
-	);
+	if (authError && !user) {
+		return (
+			<View style={styles.container}>
+				<Text>Error loading profile: {authError}</Text>
+			</View>
+		);
+	}
+
+	if (!user) {
+		return (
+			<View style={styles.container}>
+				<Text>
+					No user data available. Please try logging in again.
+				</Text>
+			</View>
+		);
+	}
 
 	return (
-		<View style={styles.container}>
-			<ScrollView showsVerticalScrollIndicator={false}>
-				<View style={styles.header}>
-					<Text style={styles.title}>Profile</Text>
-					<TouchableOpacity
-						style={styles.logoutButton}
-						onPress={handleLogout}>
-						<LogOut size={20} color={Colors.light.danger} />
-					</TouchableOpacity>
+		<ScrollView
+			style={styles.container}
+			contentContainerStyle={styles.contentContainer}>
+			<Text style={styles.title}>My Profile</Text>
+
+			<View style={styles.infoContainer}>
+				<Text style={styles.label}>Email:</Text>
+				<Text style={styles.value}>{user.email}</Text>
+			</View>
+
+			<View style={styles.infoContainer}>
+				<Text style={styles.label}>Role:</Text>
+				<Text style={styles.value}>{user.role}</Text>
+			</View>
+
+			<Input
+				label="Full Name"
+				value={fullName}
+				onChangeText={setFullName}
+				placeholder="Enter your full name"
+			/>
+			<Input
+				label="Phone Number"
+				value={phone}
+				onChangeText={setPhone}
+				placeholder="Enter your phone number"
+				keyboardType="phone-pad"
+			/>
+
+			{authLoading && <Text style={styles.loadingText}>Updating...</Text>}
+			{authError && <Text style={styles.errorText}>{authError}</Text>}
+
+			<Button
+				title="Update Profile"
+				onPress={handleUpdateProfile}
+				disabled={authLoading}
+			/>
+
+			<View style={styles.section}>
+				<Text style={styles.sectionTitle}>ID Verification</Text>
+				<View style={styles.statusContainer}>
+					<Text style={styles.statusLabel}>Status: </Text>
+					{docsLoading && !user.idProofSubmitted ? (
+						<ActivityIndicator size="small" />
+					) : (
+						getOverallDocumentStatus()
+					)}
 				</View>
-
-				{user && (
-					<UserProfileHeader user={user} onEditPress={() => {}} />
-				)}
-
-				{getDocumentStatus()}
-
-				<View style={styles.section}>
-					<Text style={styles.sectionTitle}>ID Verification</Text>
-					<Text style={styles.sectionDescription}>
-						Please upload clear images of your ID documents. This is
-						required for bike rentals.
-					</Text>
-
-					<View style={styles.documentUploadContainer}>
-						<View style={styles.documentTypeContainer}>
-							<View style={styles.documentTypeHeader}>
-								<IdCard size={20} color={Colors.light.text} />
-								<Text style={styles.documentTypeTitle}>
-									ID Card
-								</Text>
-							</View>
-
-							<View style={styles.documentUploadButtons}>
-								<TouchableOpacity
-									style={[
-										styles.uploadButton,
-										hasUploadedFrontId &&
-											styles.uploadedButton,
-									]}
-									onPress={() =>
-										openImagePicker("idCard", "front")
-									}>
-									<Upload
-										size={20}
-										color={
-											hasUploadedFrontId
-												? Colors.light.tertiary
-												: Colors.light.grey3
-										}
-									/>
-									<Text
-										style={[
-											styles.uploadButtonText,
-											hasUploadedFrontId &&
-												styles.uploadedButtonText,
-										]}>
-										{hasUploadedFrontId
-											? "Front Uploaded"
-											: "Upload Front"}
-									</Text>
-								</TouchableOpacity>
-
-								<TouchableOpacity
-									style={[
-										styles.uploadButton,
-										hasUploadedBackId &&
-											styles.uploadedButton,
-									]}
-									onPress={() =>
-										openImagePicker("idCard", "back")
-									}>
-									<Upload
-										size={20}
-										color={
-											hasUploadedBackId
-												? Colors.light.tertiary
-												: Colors.light.grey3
-										}
-									/>
-									<Text
-										style={[
-											styles.uploadButtonText,
-											hasUploadedBackId &&
-												styles.uploadedButtonText,
-										]}>
-										{hasUploadedBackId
-											? "Back Uploaded"
-											: "Upload Back"}
-									</Text>
-								</TouchableOpacity>
-							</View>
-						</View>
-
-						<View style={styles.documentTypeContainer}>
-							<View style={styles.documentTypeHeader}>
-								<FileText size={20} color={Colors.light.text} />
-								<Text style={styles.documentTypeTitle}>
-									Driving License
-								</Text>
-							</View>
-
-							<View style={styles.documentUploadButtons}>
-								<TouchableOpacity
-									style={[
-										styles.uploadButton,
-										hasUploadedFrontLicense &&
-											styles.uploadedButton,
-									]}
-									onPress={() =>
-										openImagePicker(
-											"drivingLicense",
-											"front"
-										)
-									}>
-									<Upload
-										size={20}
-										color={
-											hasUploadedFrontLicense
-												? Colors.light.tertiary
-												: Colors.light.grey3
-										}
-									/>
-									<Text
-										style={[
-											styles.uploadButtonText,
-											hasUploadedFrontLicense &&
-												styles.uploadedButtonText,
-										]}>
-										{hasUploadedFrontLicense
-											? "Front Uploaded"
-											: "Upload Front"}
-									</Text>
-								</TouchableOpacity>
-
-								<TouchableOpacity
-									style={[
-										styles.uploadButton,
-										hasUploadedBackLicense &&
-											styles.uploadedButton,
-									]}
-									onPress={() =>
-										openImagePicker(
-											"drivingLicense",
-											"back"
-										)
-									}>
-									<Upload
-										size={20}
-										color={
-											hasUploadedBackLicense
-												? Colors.light.tertiary
-												: Colors.light.grey3
-										}
-									/>
-									<Text
-										style={[
-											styles.uploadButtonText,
-											hasUploadedBackLicense &&
-												styles.uploadedButtonText,
-										]}>
-										{hasUploadedBackLicense
-											? "Back Uploaded"
-											: "Upload Back"}
-									</Text>
-								</TouchableOpacity>
-							</View>
-						</View>
-					</View>
-				</View>
-
-				{userDocuments.length > 0 && (
-					<View style={styles.section}>
-						<Text style={styles.sectionTitle}>
-							Uploaded Documents
-						</Text>
-						{userDocuments.map((document) => (
-							<DocumentCard
-								key={document.id}
-								document={document}
-							/>
-						))}
-					</View>
-				)}
-
-				<View style={styles.buttonsContainer}>
+				{/* This is the Link causing the TypeScript error if the route isn't recognized */}
+				<Link href={"/(app)/(user)/upload-documents" as any} asChild>
 					<Button
-						title="Logout"
-						type="danger"
-						onPress={handleLogout}
-						icon={<LogOut size={18} color="white" />}
-						fullWidth
+						title={
+							user.idProofSubmitted
+								? "View/Update Documents"
+								: "Upload Documents"
+						}
+						style={styles.docButton}
 					/>
-				</View>
-			</ScrollView>
-		</View>
+				</Link>
+			</View>
+
+			<View style={styles.section}>
+				<Text style={styles.sectionTitle}>Wallet</Text>
+				<Text>
+					Balance: ₹{user.walletBalance?.toFixed(2) || "0.00"}
+				</Text>
+			</View>
+
+			<View style={{ marginTop: 30, marginBottom: 20 }}>
+				<Button title="Logout" onPress={handleLogout} />
+			</View>
+		</ScrollView>
 	);
 }
 
 const styles = StyleSheet.create({
 	container: {
 		flex: 1,
-		backgroundColor: "#F8F9FA",
+		backgroundColor: "#f5f5f5",
 	},
-	header: {
-		paddingHorizontal: 16,
-		paddingTop: 60,
-		paddingBottom: 16,
-		backgroundColor: "white",
-		flexDirection: "row",
-		justifyContent: "space-between",
-		alignItems: "center",
+	contentContainer: {
+		padding: 20,
 	},
 	title: {
-		fontSize: 22,
-		fontWeight: "700",
-		color: Colors.light.text,
+		fontSize: 24,
+		fontWeight: "bold",
+		marginBottom: 20,
+		textAlign: "center",
+		color: Colors.light.tint,
 	},
-	logoutButton: {
-		width: 40,
-		height: 40,
-		borderRadius: 20,
-		backgroundColor: `${Colors.light.danger}15`,
-		justifyContent: "center",
+	infoContainer: {
+		flexDirection: "row",
+		marginBottom: 10,
 		alignItems: "center",
 	},
+	label: {
+		fontSize: 16,
+		fontWeight: "bold",
+		marginRight: 10,
+		width: 80,
+	},
+	value: {
+		fontSize: 16,
+	},
 	section: {
-		backgroundColor: "white",
-		borderRadius: 12,
-		padding: 16,
-		marginHorizontal: 16,
-		marginTop: 16,
-		shadowColor: "#000",
-		shadowOffset: { width: 0, height: 2 },
-		shadowOpacity: 0.05,
-		shadowRadius: 10,
-		elevation: 2,
+		marginTop: 20,
+		paddingVertical: 15,
+		borderTopWidth: 1,
+		borderTopColor: "#eee",
 	},
 	sectionTitle: {
 		fontSize: 18,
-		fontWeight: "600",
-		color: Colors.light.text,
-		marginBottom: 8,
+		fontWeight: "bold",
+		marginBottom: 10,
 	},
-	sectionDescription: {
-		fontSize: 14,
-		color: Colors.light.grey3,
-		marginBottom: 16,
-	},
-	statusBanner: {
+	statusContainer: {
 		flexDirection: "row",
 		alignItems: "center",
-		padding: 12,
-		marginHorizontal: 16,
-		marginTop: 16,
-		borderRadius: 8,
+		marginBottom: 10,
 	},
-	statusText: {
-		fontSize: 14,
-		fontWeight: "500",
-		marginLeft: 8,
-		flex: 1,
-	},
-	documentUploadContainer: {
-		marginBottom: 8,
-	},
-	documentTypeContainer: {
-		marginBottom: 16,
-	},
-	documentTypeHeader: {
-		flexDirection: "row",
-		alignItems: "center",
-		marginBottom: 12,
-	},
-	documentTypeTitle: {
+	statusLabel: {
 		fontSize: 16,
 		fontWeight: "600",
-		color: Colors.light.text,
-		marginLeft: 8,
 	},
-	documentUploadButtons: {
-		flexDirection: "row",
-		justifyContent: "space-between",
+	docButton: {
+		marginTop: 10,
+		backgroundColor: Colors.light.secondary || "#5cb85c", // Example secondary color
 	},
-	uploadButton: {
-		flexDirection: "row",
-		alignItems: "center",
-		justifyContent: "center",
-		backgroundColor: "#F0F0F0",
-		paddingVertical: 12,
-		paddingHorizontal: 16,
-		borderRadius: 8,
-		width: "48%",
+	loadingText: {
+		textAlign: "center",
+		marginVertical: 10,
+		color: "blue",
 	},
-	uploadedButton: {
-		backgroundColor: `${Colors.light.tertiary}15`,
-	},
-	uploadButtonText: {
-		fontSize: 14,
-		fontWeight: "500",
-		color: Colors.light.grey3,
-		marginLeft: 8,
-	},
-	uploadedButtonText: {
-		color: Colors.light.tertiary,
-	},
-	buttonsContainer: {
-		padding: 16,
-		marginBottom: Platform.OS === "ios" ? 32 : 16,
+	errorText: {
+		textAlign: "center",
+		marginVertical: 10,
+		color: "red",
 	},
 });

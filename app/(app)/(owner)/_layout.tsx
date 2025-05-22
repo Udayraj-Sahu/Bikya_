@@ -1,50 +1,51 @@
+// app/(app)/(owner)/_layout.tsx
+import React from 'react';
 import { Tabs } from 'expo-router';
+import { LayoutDashboard, Users, FileCheck, UserCircle } from 'lucide-react-native'; // Example icons
 import Colors from '@/constants/Colors';
-import { LayoutDashboard, FileText, Users, User } from 'lucide-react-native';
 
-export default function OwnerLayout() {
+export default function OwnerTabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors.light.primary,
+        tabBarActiveTintColor: Colors.light.primary, // Or a specific owner theme color
         tabBarInactiveTintColor: Colors.light.tabIconDefault,
         tabBarStyle: {
           borderTopWidth: 1,
           borderTopColor: Colors.light.divider,
-          elevation: 0,
-          shadowOpacity: 0,
         },
-        headerShown: false,
+        headerShown: false, // Assuming headers are handled by screens or a parent stack
       }}
     >
       <Tabs.Screen
-        name="index"
+        name="index" // Corresponds to app/(app)/(owner)/index.tsx (Dashboard)
         options={{
           title: 'Dashboard',
           tabBarIcon: ({ color, size }) => <LayoutDashboard size={size} color={color} />,
         }}
       />
       <Tabs.Screen
-        name="documents"
+        name="documents" // Corresponds to app/(app)/(owner)/documents.tsx
         options={{
           title: 'Documents',
-          tabBarIcon: ({ color, size }) => <FileText size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <FileCheck size={size} color={color} />,
         }}
       />
       <Tabs.Screen
-        name="users"
+        name="users" // Corresponds to app/(app)/(owner)/users.tsx (Role Management)
         options={{
-          title: 'Users',
+          title: 'Manage Users',
           tabBarIcon: ({ color, size }) => <Users size={size} color={color} />,
         }}
       />
-      <Tabs.Screen
-        name="profile"
+      {/* You can add a Profile tab for the Owner as well */}
+      {/* <Tabs.Screen
+        name="profile" // Create app/(app)/(owner)/profile.tsx if needed
         options={{
           title: 'Profile',
-          tabBarIcon: ({ color, size }) => <User size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <UserCircle size={size} color={color} />,
         }}
-      />
+      /> */}
     </Tabs>
   );
 }

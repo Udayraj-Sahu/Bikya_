@@ -1,239 +1,195 @@
+// backend/controllers/bike.controller.js
 const Bike = require('../models/bike.model');
+const User = require('../models/user.model'); // Needed if you link bikes to users in more detail
+const catchAsync = require('../utils/catchAsync');
 const AppError = require('../utils/appError');
-const { uploadWithRetry } = require('../config/cloudinary');
+const { uploadToCloudinary } = require('../config/cloudinary'); // If bike images are uploaded
 
-// @desc    Get all bikes
-// @route   GET /api/bikes
-// @access  Public
-exports.getAllBikes = async (req, res, next) => {
-  try {
-    const { 
-      page = 1, 
-      limit = 10, 
-      category, 
-      lat, 
-      lng, 
-      maxDistance,
-      availability
-    } = req.query;
+// Note: For bike image uploads, you'd typically use a similar multer setup as for documents.
+// Let's assume for now that image URLs are provided directly in the request body,
+// or that you'll adapt the document upload logic for bike images.
+// If uploading directly:
+// const uploadMiddleware = require('../middleware/upload.middleware'); // e.g., upload.array('images', 5)
 
-    const pageNumber = parseInt(page, 10);
-    const limitNumber = parseInt(limit, 10);
-    const skip = (pageNumber - 1) * limitNumber;
+// GET All Bikes (Public/User facing - already likely implemented for user explore)
+exports.getAllBikes = catchAsync(async (req, res, next) => {
+  // Add filtering, sorting, pagination as needed for user exploration
+  // Example: Geospatial query if 'near' coordinates are provided
+  let query = Bike.find({ availability: true }); // Default to available bikes for users
 
-    // Build filter object
-    const filter = {};
-    
-    if (category) {
-      filter.category = category;
-    }
-    
-    if (availability) {
-      filter.availability = availability === 'true';
-    }
+  // Basic filtering example (can be expanded)
+  if (req.query.category) {
+    query = query.where('category').equals(req.query.category);
+  }
+  if (req.query.model) {
+    query = query.where('model').regex(new RegExp(req.query.model, 'i')); // Case-insensitive search
+  }
 
-    // Geospatial query if coordinates are provided
-    if (lat && lng) {
-      filter.location = {
-        $near: {
-          $geometry: {
-            type: 'Point',
-            coordinates: [parseFloat(lng), parseFloat(lat)],
-          },
-          $maxDistance: parseInt(maxDistance) || 10000, // Default to 10km
+  // Geospatial search (if coordinates are provided in query)
+  // Example: /api/bikes?coords=longitude,latitude&maxDistance=10000 (in meters)
+  if (req.query.coords) {
+    const [longitude, latitude] = req.query.coords.split(',').map(parseFloat);
+    const maxDistance = parseInt(req.query.maxDistance, 10) || 10000; // Default 10km
+
+    if (!isNaN(longitude) && !isNaN(latitude)) {
+      query = query.where('location').near({
+        center: {
+          type: 'Point',
+          coordinates: [longitude, latitude],
         },
-      };
+        maxDistance: maxDistance, // in meters
+      });
     }
-
-    // Count total documents
-    const total = await Bike.countDocuments(filter);
-
-    // Get bikes with pagination
-    const bikes = await Bike.find(filter)
-      .skip(skip)
-      .limit(limitNumber)
-      .populate('createdBy', 'fullName');
-
-    res.status(200).json({
-      success: true,
-      count: bikes.length,
-      totalPages: Math.ceil(total / limitNumber),
-      currentPage: pageNumber,
-      data: {
-        bikes,
-      },
-    });
-  } catch (error) {
-    next(error);
   }
-};
+  
+  const bikes = await query;
 
-// @desc    Get bike by ID
-// @route   GET /api/bikes/:id
-// @access  Public
-exports.getBikeById = async (req, res, next) => {
-  try {
-    const bike = await Bike.findById(req.params.id).populate(
-      'createdBy',
-      'fullName'
-    );
+  res.status(200).json({
+    status: 'success',
+    results: bikes.length,
+    data: {
+      bikes,
+    },
+  });
+});
 
-    if (!bike) {
-      return next(new AppError('Bike not found.', 404));
-    }
-
-    res.status(200).json({
-      success: true,
-      data: {
-        bike,
-      },
-    });
-  } catch (error) {
-    next(error);
+// GET Single Bike (Public/User facing)
+exports.getBikeById = catchAsync(async (req, res, next) => {
+  const bike = await Bike.findById(req.params.id);
+  if (!bike) {
+    return next(new AppError('No bike found with that ID', 404));
   }
-};
+  res.status(200).json({
+    status: 'success',
+    data: {
+      bike,
+    },
+  });
+});
 
-// @desc    Create new bike
-// @route   POST /api/bikes
-// @access  Private (Admin only)
-exports.createBike = async (req, res, next) => {
-  try {
-    const {
-      model,
-      pricePerHour,
-      pricePerDay,
-      location,
-      category,
-      features,
-      engineCapacity,
-      batteryRange,
-    } = req.body;
 
-    const files = req.files;
+// --- Admin/Owner Restricted Functions ---
 
-    if (!files || files.length === 0) {
-      return next(new AppError('Please upload at least one image.', 400));
+// POST Create a new Bike (Admin/Owner)
+exports.createBike = catchAsync(async (req, res, next) => {
+  // Assuming req.user is populated by authMiddleware.protect
+  const { model, category, pricePerHour, pricePerDay, location, addressText, images } = req.body;
+
+  // Basic validation (more robust validation should be in a middleware)
+  if (!model || !category || !pricePerHour || !pricePerDay || !location || !location.coordinates || !images || images.length === 0) {
+    return next(new AppError('Please provide all required bike details including model, category, prices, location, and at least one image URL.', 400));
+  }
+  if(location.coordinates.length !== 2){
+    return next(new AppError('Location coordinates must be an array of [longitude, latitude].', 400));
+  }
+
+
+  // TODO: If handling image uploads directly (not just URLs):
+  // let imageUrls = [];
+  // if (req.files && req.files.images) {
+  //   for (const file of req.files.images) {
+  //     const result = await uploadToCloudinary(file.buffer, file.originalname, `bikya_bikes/${req.user.id}`);
+  //     imageUrls.push(result.secure_url);
+  //   }
+  // } else if (req.body.images) { // If URLs are passed directly
+  //   imageUrls = req.body.images;
+  // }
+  // if (imageUrls.length === 0) return next(new AppError('At least one image is required.', 400));
+
+  const newBikeData = {
+    model,
+    category,
+    pricePerHour,
+    pricePerDay,
+    location: { // Ensure GeoJSON Point format
+        type: 'Point',
+        coordinates: [parseFloat(location.coordinates[0]), parseFloat(location.coordinates[1])] // [longitude, latitude]
+    },
+    addressText, // Optional human-readable address
+    images, // Assuming images are an array of URLs for now
+    availability: req.body.availability !== undefined ? req.body.availability : true,
+    createdBy: req.user.id, // Link to the admin/owner who created it
+  };
+
+  const newBike = await Bike.create(newBikeData);
+
+  res.status(201).json({
+    status: 'success',
+    data: {
+      bike: newBike,
+    },
+  });
+});
+
+// PATCH Update a Bike (Admin/Owner)
+exports.updateBike = catchAsync(async (req, res, next) => {
+  const bikeId = req.params.id;
+  const updates = req.body;
+
+  // Filter out fields that should not be updated this way (e.g., createdBy)
+  const allowedUpdates = ['model', 'category', 'pricePerHour', 'pricePerDay', 'location', 'addressText', 'availability', 'images'];
+  const filteredUpdates = {};
+  Object.keys(updates).forEach(key => {
+    if (allowedUpdates.includes(key)) {
+      filteredUpdates[key] = updates[key];
     }
+  });
 
-    // Upload images to Cloudinary with retry and optimization
-    const uploadPromises = files.map((file) =>
-      uploadWithRetry(file.path, {
-        folder: 'bikya/bikes',
-        transformation: [
-          { width: 800, height: 600, crop: 'fill' },
-          { quality: 'auto:good' },
-          { fetch_format: 'auto' }
+  // Handle location update specifically for GeoJSON format
+  if (filteredUpdates.location && filteredUpdates.location.coordinates) {
+    if(filteredUpdates.location.coordinates.length !== 2){
+        return next(new AppError('Location coordinates must be an array of [longitude, latitude].', 400));
+    }
+    filteredUpdates.location = {
+        type: 'Point',
+        coordinates: [
+            parseFloat(filteredUpdates.location.coordinates[0]), 
+            parseFloat(filteredUpdates.location.coordinates[1])
         ]
-      })
-    );
-
-    const results = await Promise.all(uploadPromises);
-    const images = results.map((result) => result.secure_url);
-
-    // Create new bike
-    const bike = await Bike.create({
-      model,
-      pricePerHour,
-      pricePerDay,
-      location: {
-        type: 'Point',
-        coordinates: location.coordinates,
-      },
-      availability: true,
-      images,
-      createdBy: req.user.id,
-      category,
-      features: features || [],
-      engineCapacity: engineCapacity || undefined,
-      batteryRange: batteryRange || undefined,
-    });
-
-    res.status(201).json({
-      success: true,
-      data: {
-        bike,
-      },
-    });
-  } catch (error) {
-    next(error);
+    };
   }
-};
 
-// @desc    Update bike
-// @route   PUT /api/bikes/:id
-// @access  Private (Admin only)
-exports.updateBike = async (req, res, next) => {
-  try {
-    const {
-      model,
-      pricePerHour,
-      pricePerDay,
-      location,
-      availability,
-      category,
-      features,
-      engineCapacity,
-      batteryRange,
-    } = req.body;
 
-    // Build update object
-    const updateData = {};
-    if (model) updateData.model = model;
-    if (pricePerHour) updateData.pricePerHour = pricePerHour;
-    if (pricePerDay) updateData.pricePerDay = pricePerDay;
-    if (location && location.coordinates) {
-      updateData.location = {
-        type: 'Point',
-        coordinates: location.coordinates,
-      };
-    }
-    if (availability !== undefined) updateData.availability = availability;
-    if (category) updateData.category = category;
-    if (features) updateData.features = features;
-    if (engineCapacity) updateData.engineCapacity = engineCapacity;
-    if (batteryRange) updateData.batteryRange = batteryRange;
+  // TODO: Handle image updates (e.g., adding new images, removing old ones)
+  // This can be complex: might involve deleting from Cloudinary, then uploading new ones.
+  // For simplicity, if 'images' array is provided, it replaces the old one.
 
-    // Check if bike exists
-    let bike = await Bike.findById(req.params.id);
-    if (!bike) {
-      return next(new AppError('Bike not found.', 404));
-    }
+  const updatedBike = await Bike.findByIdAndUpdate(bikeId, filteredUpdates, {
+    new: true, // Return the modified document rather than the original
+    runValidators: true, // Ensure schema validations are run
+  });
 
-    // Update bike
-    bike = await Bike.findByIdAndUpdate(req.params.id, updateData, {
-      new: true,
-      runValidators: true,
-    });
-
-    res.status(200).json({
-      success: true,
-      data: {
-        bike,
-      },
-    });
-  } catch (error) {
-    next(error);
+  if (!updatedBike) {
+    return next(new AppError('No bike found with that ID to update', 404));
   }
-};
 
-// @desc    Delete bike
-// @route   DELETE /api/bikes/:id
-// @access  Private (Admin only)
-exports.deleteBike = async (req, res, next) => {
-  try {
-    const bike = await Bike.findById(req.params.id);
+  res.status(200).json({
+    status: 'success',
+    data: {
+      bike: updatedBike,
+    },
+  });
+});
 
-    if (!bike) {
-      return next(new AppError('Bike not found.', 404));
-    }
+// DELETE a Bike (Admin/Owner)
+exports.deleteBike = catchAsync(async (req, res, next) => {
+  const bikeId = req.params.id;
+  const bike = await Bike.findByIdAndDelete(bikeId);
 
-    await Bike.findByIdAndDelete(req.params.id);
-
-    res.status(200).json({
-      success: true,
-      data: null,
-    });
-  } catch (error) {
-    next(error);
+  if (!bike) {
+    return next(new AppError('No bike found with that ID to delete', 404));
   }
-};
+
+  // TODO: If images are stored in Cloudinary, you might want to delete them here as well.
+  // This requires storing public_ids of images and iterating through them.
+  // For example:
+  // if (bike.images && bike.images.length > 0) {
+  //   const publicIds = bike.images.map(url => /* extract public_id from url */);
+  //   await cloudinary.api.delete_resources(publicIds);
+  // }
+
+  res.status(204).json({ // 204 No Content
+    status: 'success',
+    data: null,
+  });
+});
