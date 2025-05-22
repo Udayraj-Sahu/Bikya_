@@ -50,7 +50,7 @@ export default function AdminDashboardScreen() {
           
           <TouchableOpacity 
             style={[styles.statCard, { backgroundColor: `${Colors.light.secondary}10` }]}
-            onPress={() => router.push('/(app)/(admin)/bookings')}
+            onPress={() => router.push('/(app)/(admin)/bookings' as any)}
           >
             <View style={[styles.iconContainer, { backgroundColor: Colors.light.secondary }]}>
               <Calendar size={20} color="white" />
@@ -86,13 +86,13 @@ export default function AdminDashboardScreen() {
           <View style={styles.actionButtonsContainer}>
             <TouchableOpacity 
               style={styles.actionButton}
-              onPress={() => router.push('/(app)/(admin)/inventory/add-bike')}
+              onPress={() => router.push('/(app)/(admin)/inventory/add-bike' as any)}
             >
               <Text style={styles.actionButtonText}>Add New Bike</Text>
             </TouchableOpacity>
             <TouchableOpacity 
               style={styles.actionButton}
-              onPress={() => router.push('/(app)/(admin)/bookings')}
+              onPress={() => router.push('/(app)/(admin)/bookings' as any)}
             >
               <Text style={styles.actionButtonText}>View Bookings</Text>
             </TouchableOpacity>
@@ -128,7 +128,7 @@ export default function AdminDashboardScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Booking Statistics</Text>
-            <TouchableOpacity onPress={() => router.push('/(app)/(admin)/bookings')}>
+            <TouchableOpacity onPress={() => router.push('/(app)/(admin)/bookings' as any)}>
               <Text style={styles.seeAllText}>See All</Text>
             </TouchableOpacity>
           </View>

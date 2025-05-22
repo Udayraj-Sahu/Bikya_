@@ -1,3 +1,4 @@
+// @/redux/slices/bookingSlice.ts
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { Booking } from '@/types';
 import * as bookingService from '@/services/bookingService';
@@ -77,47 +78,48 @@ const bookingSlice = createSlice({
   },
   extraReducers: (builder) => {
     // Fetch user bookings
-    builder.addCase(fetchUserBookings.pending, (state) => {
-      state.isLoading = true;
-      state.error = null;
-    });
-    builder.addCase(fetchUserBookings.fulfilled, (state, action) => {
-      state.isLoading = false;
-      state.bookings = action.payload;
-    });
-    builder.addCase(fetchUserBookings.rejected, (state, action) => {
-      state.isLoading = false;
-      state.error = action.payload as string;
-    });
-
-    // Fetch all bookings
-    builder.addCase(fetchAllBookings.pending, (state) => {
-      state.isLoading = true;
-      state.error = null;
-    });
-    builder.addCase(fetchAllBookings.fulfilled, (state, action) => {
-      state.isLoading = false;
-      state.bookings = action.payload;
-    });
-    builder.addCase(fetchAllBookings.rejected, (state, action) => {
-      state.isLoading = false;
-      state.error = action.payload as string;
-    });
-
-    // Create booking
-    builder.addCase(createBooking.fulfilled, (state, action) => {
-      state.bookings.push(action.payload);
-    });
-
-    // Update booking status
-    builder.addCase(updateBookingStatus.fulfilled, (state, action) => {
-      const index = state.bookings.findIndex(booking => booking.id === action.payload.id);
-      if (index !== -1) {
-        state.bookings[index] = action.payload;
-      }
-    });
+    builder
+      .addCase(fetchUserBookings.pending, (state) => {
+        state.isLoading = true;
+        state.error = null;
+      })
+      .addCase(fetchUserBookings.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.bookings = action.payload;
+      })
+      .addCase(fetchUserBookings.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload as string;
+      })
+      // Fetch all bookings
+      .addCase(fetchAllBookings.pending, (state) => {
+        state.isLoading = true;
+        state.error = null;
+      })
+      .addCase(fetchAllBookings.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.bookings = action.payload;
+      })
+      .addCase(fetchAllBookings.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload as string;
+      })
+      // Create booking
+      .addCase(createBooking.fulfilled, (state, action) => {
+        state.bookings.push(action.payload);
+      })
+      // Update booking status
+      .addCase(updateBookingStatus.fulfilled, (state, action) => {
+        const index = state.bookings.findIndex(booking => booking.id === action.payload.id);
+        if (index !== -1) {
+          state.bookings[index] = action.payload;
+        }
+        if (state.selectedBooking?.id === action.payload.id) {
+          state.selectedBooking = action.payload;
+        }
+      });
   },
 });
 
-export const { setSelectedBooking, clearErrors } = bookingSlice.actions;
+export const { setSelectedBooking, clearErrors, } = bookingSlice.actions;
 export default bookingSlice.reducer;

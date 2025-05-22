@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { StyleSheet, View, Image, Text } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAppSelector } from '@/redux/hooks';
@@ -8,10 +8,13 @@ import Button from '@/components/Button';
 export default function WelcomeScreen() {
   const router = useRouter();
   const { user } = useAppSelector(state => state.auth);
+  const hasRedirected = useRef(false);
 
   useEffect(() => {
     // Auto redirect if user is already logged in
-    if (user) {
+    // Use a ref to ensure we only redirect once
+    if (user && !hasRedirected.current) {
+      hasRedirected.current = true;
       if (user.role === 'user') {
         router.replace('/(app)/(user)');
       } else if (user.role === 'admin') {

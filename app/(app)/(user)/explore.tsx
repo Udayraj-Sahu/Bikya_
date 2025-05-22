@@ -7,7 +7,7 @@ import Colors from '@/constants/Colors';
 import { Search, Sliders, MapPin } from 'lucide-react-native';
 import BikeCard from '@/components/BikeCard';
 import MapView, { Marker } from 'react-native-maps';
-
+import { Bike } from '@/types';
 const { width } = Dimensions.get('window');
 
 export default function ExploreScreen() {
@@ -21,7 +21,7 @@ export default function ExploreScreen() {
     dispatch(fetchBikes());
   }, [dispatch]);
   
-  const handleBikePress = (bike) => {
+  const handleBikePress = (bike : Bike) => {
     dispatch(setSelectedBike(bike));
     router.push('/(app)/(user)/bike-details');
   };

@@ -1,26 +1,71 @@
-/**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
- */
+const tintColorLight = '#FF7E1D';
+const tintColorDark = '#FF9747';
 
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
-
-export const Colors = {
+export default {
   light: {
-    text: '#11181C',
-    background: '#fff',
+    text: '#000000',
+    background: '#FFFFFF',
     tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
+    tabIconDefault: '#86939E',
     tabIconSelected: tintColorLight,
+    primary: '#FF7E1D',
+    secondary: '#2A6EF6',
+    tertiary: '#00C853',
+    danger: '#FF3B30',
+    warning: '#FFCC00',
+    success: '#34C759',
+    grey0: '#1C1C1E',
+    grey1: '#2C2C2E',
+    grey2: '#3A3A3C',
+    grey3: '#48484A',
+    grey4: '#636366',
+    grey5: '#8E8E93',
+    greyOutline: '#BBBBBB',
+    disabled: '#CDCDCD',
+    divider: '#E1E1E1',
+    platform: {
+      ios: {
+        primary: '#FF7E1D',
+      },
+      android: {
+        primary: '#FF7E1D',
+      },
+      web: {
+        primary: '#FF7E1D',
+      },
+    },
   },
   dark: {
-    text: '#ECEDEE',
-    background: '#151718',
+    text: '#FFFFFF',
+    background: '#000000',
     tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
+    tabIconDefault: '#86939E',
     tabIconSelected: tintColorDark,
+    primary: '#FF9747',
+    secondary: '#5C93FF',
+    tertiary: '#2BD975',
+    danger: '#FF453A',
+    warning: '#FFD60A',
+    success: '#30D158',
+    grey0: '#F2F2F7',
+    grey1: '#E5E5EA',
+    grey2: '#D1D1D6',
+    grey3: '#C7C7CC',
+    grey4: '#AEAEB2',
+    grey5: '#8E8E93',
+    greyOutline: '#636366',
+    disabled: '#3A3A3C',
+    divider: '#38383A',
+    platform: {
+      ios: {
+        primary: '#FF9747',
+      },
+      android: {
+        primary: '#FF9747',
+      },
+      web: {
+        primary: '#FF9747',
+      },
+    },
   },
 };

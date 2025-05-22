@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+// app/(app)/(user)/bookings.tsx
+import { useEffect, useState, useRef } from 'react';
 import { StyleSheet, View, Text, FlatList, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
@@ -6,36 +7,39 @@ import { fetchUserBookings, setSelectedBooking } from '@/redux/slices/bookingSli
 import Colors from '@/constants/Colors';
 import { ClipboardList } from 'lucide-react-native';
 import BookingCard from '@/components/BookingCard';
+import { Booking } from '@/types';
 
 export default function BookingsScreen() {
   const dispatch = useAppDispatch();
   const { user } = useAppSelector(state => state.auth);
-  const { bookings, isLoading } = useAppSelector(state => state.bookings);
-  const [activeTab, setActiveTab] = useState<'all' | 'active' | 'completed' | 'cancelled'>('all');
-  
+  const { bookings, isLoading, error } = useAppSelector(state => state.bookings);
+  const [activeTab, setActiveTab] = useState<Booking['status'] | 'all'>('all');
+  const hasFetchedBookings = useRef(false);
+
   useEffect(() => {
-    if (user?.id) {
+    if (user?.id && !hasFetchedBookings.current) {
+      hasFetchedBookings.current = true;
       dispatch(fetchUserBookings(user.id));
     }
   }, [dispatch, user]);
-  
-  const handleBookingPress = (booking) => {
+
+  const handleBookingPress = (booking: Booking) => {
     dispatch(setSelectedBooking(booking));
-    router.push('/(app)/(user)/booking-details');
+    router.push('/(app)/(user)/booking-details'as any);
   };
-  
-  const filteredBookings = 
-    activeTab === 'all' 
-      ? bookings 
+
+  const filteredBookings =
+    activeTab === 'all'
+      ? bookings
       : bookings.filter(booking => booking.status === activeTab);
-  
+
   return (
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>My Bookings</Text>
       </View>
-      
+
       {/* Tabs */}
       <View style={styles.tabContainer}>
         <TouchableOpacity
@@ -43,6 +47,12 @@ export default function BookingsScreen() {
           onPress={() => setActiveTab('all')}
         >
           <Text style={[styles.tabText, activeTab === 'all' && styles.activeTabText]}>All</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'pending' && styles.activeTab]}
+          onPress={() => setActiveTab('pending')}
+        >
+          <Text style={[styles.tabText, activeTab === 'pending' && styles.activeTabText]}>Pending</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tab, activeTab === 'active' && styles.activeTab]}
@@ -63,11 +73,23 @@ export default function BookingsScreen() {
           <Text style={[styles.tabText, activeTab === 'cancelled' && styles.activeTabText]}>Cancelled</Text>
         </TouchableOpacity>
       </View>
-      
+
       {/* Bookings List */}
       {isLoading ? (
         <View style={styles.centerContainer}>
           <Text>Loading bookings...</Text>
+        </View>
+      ) : error ? (
+        <View style={styles.centerContainer}>
+          <Text style={styles.errorText}>Error: {error}</Text>
+          <TouchableOpacity
+            onPress={() => {
+              hasFetchedBookings.current = false;
+              dispatch(fetchUserBookings(user!.id));
+            }}
+          >
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
         </View>
       ) : filteredBookings.length > 0 ? (
         <FlatList
@@ -83,7 +105,7 @@ export default function BookingsScreen() {
         <View style={styles.centerContainer}>
           <ClipboardList size={64} color={Colors.light.grey4} style={styles.emptyIcon} />
           <Text style={styles.emptyText}>No bookings found</Text>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.exploreButton}
             onPress={() => router.push('/(app)/(user)/explore')}
           >
@@ -164,5 +186,15 @@ const styles = StyleSheet.create({
   exploreButtonText: {
     color: 'white',
     fontWeight: '600',
+  },
+  errorText: {
+    fontSize: 16,
+    color: Colors.light.danger,
+    marginBottom: 10,
+  },
+  retryText: {
+    fontSize: 16,
+    color: Colors.light.primary,
+    fontWeight: '500',
   },
 });

@@ -6,9 +6,10 @@ import { updateLocation } from '@/redux/slices/authSlice';
 import { useLocation } from '@/hooks/useLocation';
 import { router } from 'expo-router';
 import Colors from '@/constants/Colors';
-import { Search, MapPin, Bike, AlertTriangle } from 'lucide-react-native';
+import { Search, MapPin, AlertTriangle } from 'lucide-react-native';
 import BikeCard from '@/components/BikeCard';
 import Button from '@/components/Button';
+import { Bike } from '@/types';
 
 export default function UserHomeScreen() {
   const dispatch = useAppDispatch();
@@ -24,7 +25,7 @@ export default function UserHomeScreen() {
     }
   }, [location, dispatch]);
   
-  const handleBikePress = (bike) => {
+  const handleBikePress = (bike : Bike) => {
     dispatch(setSelectedBike(bike));
     router.push('/(app)/(user)/bike-details');
   };
@@ -56,9 +57,9 @@ export default function UserHomeScreen() {
               )}
             </View>
           </View>
-          <View style={styles.notificationBadge}>
-            <Bike size={24} color={Colors.light.text} />
-          </View>
+          {/* <View style={styles.notificationBadge}>
+            <bikes size={24} color={Colors.light.text} />
+          </View> */}
         </View>
         
         {/* Search Bar */}
